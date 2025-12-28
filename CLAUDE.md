@@ -26,12 +26,13 @@ iOS card wallet app using SwiftUI + Core Data with CloudKit sync. Stores photos 
 - Uses `NSPersistentCloudKitContainer` for automatic iCloud sync
 - CloudKit requires all attributes to have default values or be optional
 - `Card` entity stores front/back images as binary data with external storage enabled
+- `CardStore` is the main view model using `@Observable` macro for CRUD operations
 
 ### Views Flow
-1. `CardListView` - Apple Wallet-style stacked card UI (main screen)
-2. `FullScreenCardView` - Full-screen card display for showing to others (tap to flip front/back)
-3. `CardDetailView` - Edit card details (accessed via long-press)
-4. `AddCardView` / `EditCardView` - Card creation/editing with scanner integration
+1. `CardListView` - Apple Wallet-style stacked card UI with tap-to-expand animation
+2. `FullScreenCardView` - Full-screen card display (tap to flip, swipe down to dismiss)
+3. `EditCardView` - Card editing with scanner integration (accessed via long-press)
+4. `AddCardView` - Card creation with scanner integration
 
 ### Custom Scanner (`AutoCaptureScanner.swift`)
 Custom camera implementation using AVFoundation + Vision framework:
@@ -44,9 +45,14 @@ Custom camera implementation using AVFoundation + Vision framework:
 ### Image Enhancement (`ImageEnhancer.swift`)
 Core Image filters for card legibility: auto-adjust, sharpen, noise reduction, unsharp mask.
 
+### Logging (`AppLogger.swift`)
+Uses `os.Logger` with categories: `UI`, `Data`, `Scanner`. Filter in Xcode console with `subsystem:com.kevinthau.wallet`.
+
 ## Key Technical Notes
 
 - Development Team ID: `3JXY2MS2Y3`
 - Bundle ID: `com.kevinthau.wallet`
 - iOS 17.0+ target, Swift 5.9
+- Portrait-only orientation, requires full screen
 - Entitlements: iCloud (CloudKit) and key-value store
+- Layout constants defined in `Constants.swift`
