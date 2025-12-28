@@ -98,15 +98,18 @@ class CardStore {
         category: CardCategory? = nil,
         frontImage: UIImage? = nil,
         backImage: UIImage? = nil,
+        clearBackImage: Bool = false,
         notes: String? = nil
     ) {
         if let name = name { card.name = name }
         if let category = category { card.category = category }
         if let frontImage = frontImage {
-            card.frontImageData = frontImage.jpegData(compressionQuality: 0.8)
+            card.frontImageData = frontImage.jpegData(compressionQuality: Constants.jpegCompressionQuality)
         }
-        if let backImage = backImage {
-            card.backImageData = backImage.jpegData(compressionQuality: 0.8)
+        if clearBackImage {
+            card.backImageData = nil
+        } else if let backImage = backImage {
+            card.backImageData = backImage.jpegData(compressionQuality: Constants.jpegCompressionQuality)
         }
         if let notes = notes { card.notes = notes }
         save()

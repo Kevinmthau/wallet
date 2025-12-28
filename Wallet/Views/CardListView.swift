@@ -3,6 +3,7 @@ import CoreData
 
 struct CardListView: View {
     @Environment(\.managedObjectContext) private var viewContext
+    @Environment(CardStore.self) private var cardStore
 
     @FetchRequest(
         sortDescriptors: [
@@ -19,9 +20,9 @@ struct CardListView: View {
     @State private var expandedCardId: UUID?
     @State private var searchText = ""
 
-    private let cardHeight: CGFloat = 200
-    private let cardSpacing: CGFloat = 70
-    private let expandedSpacing: CGFloat = 220
+    private let cardHeight = Constants.CardLayout.cardHeight
+    private let cardSpacing = Constants.CardLayout.cardSpacing
+    private let expandedSpacing = Constants.CardLayout.expandedSpacing
 
     private var filteredCards: [Card] {
         if searchText.isEmpty {
@@ -98,8 +99,7 @@ struct CardListView: View {
                             withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                                 if expandedCardId == card.id {
                                     selectedCard = card
-                                    card.lastAccessedAt = Date()
-                                    try? viewContext.save()
+                                    cardStore.markAccessed(card)
                                 } else {
                                     expandedCardId = card.id
                                 }
@@ -110,14 +110,12 @@ struct CardListView: View {
                         },
                         onFavoriteToggle: {
                             withAnimation {
-                                card.isFavorite.toggle()
-                                try? viewContext.save()
+                                cardStore.toggleFavorite(card)
                             }
                         },
                         onDelete: {
                             withAnimation {
-                                viewContext.delete(card)
-                                try? viewContext.save()
+                                cardStore.delete(card)
                             }
                         }
                     )
@@ -147,7 +145,7 @@ struct CardStackItem: View {
     let onFavoriteToggle: () -> Void
     let onDelete: () -> Void
 
-    private var cardSpacing: CGFloat { 70 }
+    private var cardSpacing: CGFloat { Constants.CardLayout.cardSpacing }
 
     var body: some View {
         WalletCardView(card: card)

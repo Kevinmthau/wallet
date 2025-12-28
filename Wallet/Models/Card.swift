@@ -80,8 +80,8 @@ extension Card {
         card.id = UUID()
         card.name = name
         card.category = category
-        card.frontImageData = frontImage.jpegData(compressionQuality: 0.8)
-        card.backImageData = backImage?.jpegData(compressionQuality: 0.8)
+        card.frontImageData = frontImage.jpegData(compressionQuality: Constants.jpegCompressionQuality)
+        card.backImageData = backImage?.jpegData(compressionQuality: Constants.jpegCompressionQuality)
         card.notes = notes
         card.isFavorite = false
         card.createdAt = Date()

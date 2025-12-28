@@ -1,6 +1,6 @@
 import SwiftUI
 import AVFoundation
-import Vision
+@preconcurrency import Vision
 
 struct AutoCaptureScanner: View {
     @Environment(\.dismiss) private var dismiss

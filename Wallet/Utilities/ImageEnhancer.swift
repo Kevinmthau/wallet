@@ -35,6 +35,16 @@ class ImageEnhancer {
         return UIImage(cgImage: cgImage, scale: image.scale, orientation: image.imageOrientation)
     }
 
+    /// Async document enhancement on background thread
+    func enhanceAsDocumentAsync(_ image: UIImage, completion: @escaping (UIImage) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let enhanced = self.enhanceAsDocument(image)
+            DispatchQueue.main.async {
+                completion(enhanced)
+            }
+        }
+    }
+
     /// Document-style enhancement (high contrast B&W option)
     func enhanceAsDocument(_ image: UIImage, blackAndWhite: Bool = false) -> UIImage {
         guard let ciImage = CIImage(image: image) else { return image }

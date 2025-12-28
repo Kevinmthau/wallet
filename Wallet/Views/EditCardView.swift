@@ -4,7 +4,7 @@ import VisionKit
 
 struct EditCardView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.managedObjectContext) private var viewContext
+    @Environment(CardStore.self) private var cardStore
 
     let card: Card
 
@@ -53,7 +53,7 @@ struct EditCardView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
 
-                        imagePickerButton(
+                        CardImagePickerButton(
                             image: frontImage,
                             placeholder: "Scan front of card",
                             onScan: {
@@ -82,7 +82,7 @@ struct EditCardView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
 
-                        imagePickerButton(
+                        CardImagePickerButton(
                             image: backImage,
                             placeholder: "Scan back of card",
                             onScan: {
@@ -198,80 +198,6 @@ struct EditCardView: View {
         }
     }
 
-    @ViewBuilder
-    private func imagePickerButton(
-        image: UIImage?,
-        placeholder: String,
-        onScan: @escaping () -> Void,
-        onLibrary: @escaping () -> Void,
-        onEnhance: @escaping () -> Void,
-        onRemove: @escaping () -> Void
-    ) -> some View {
-        if let image = image {
-            VStack(spacing: 8) {
-                ZStack(alignment: .topTrailing) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxHeight: 150)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                    Button {
-                        onRemove()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title2)
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(.white, .red)
-                    }
-                    .offset(x: 8, y: -8)
-                }
-
-                HStack(spacing: 12) {
-                    Button {
-                        onScan()
-                    } label: {
-                        Label("Rescan", systemImage: "doc.viewfinder")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        onEnhance()
-                    } label: {
-                        Label("Enhance", systemImage: "wand.and.stars")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-        } else {
-            Menu {
-                Button {
-                    onScan()
-                } label: {
-                    Label("Scan Card", systemImage: "doc.viewfinder")
-                }
-
-                Button {
-                    onLibrary()
-                } label: {
-                    Label("Choose from Library", systemImage: "photo.on.rectangle")
-                }
-            } label: {
-                HStack {
-                    Image(systemName: "doc.viewfinder")
-                    Text(placeholder)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 100)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
     private func loadAndEnhanceImage(from item: PhotosPickerItem?, completion: @escaping (UIImage?) -> Void) {
         guard let item = item else { return }
 
@@ -294,29 +220,22 @@ struct EditCardView: View {
 
     private func enhanceImage(_ image: UIImage, completion: @escaping (UIImage) -> Void) {
         isEnhancing = true
-        DispatchQueue.global(qos: .userInitiated).async {
-            let enhanced = ImageEnhancer.shared.enhanceAsDocument(image)
-            DispatchQueue.main.async {
-                completion(enhanced)
-                isEnhancing = false
-            }
+        ImageEnhancer.shared.enhanceAsDocumentAsync(image) { enhanced in
+            completion(enhanced)
+            isEnhancing = false
         }
     }
 
     private func saveChanges() {
-        card.name = name
-        card.category = category
-        card.notes = notes.isEmpty ? nil : notes
-
-        if frontChanged, let frontImage = frontImage {
-            card.frontImageData = frontImage.jpegData(compressionQuality: 0.8)
-        }
-
-        if backChanged {
-            card.backImageData = backImage?.jpegData(compressionQuality: 0.8)
-        }
-
-        try? viewContext.save()
+        cardStore.updateCard(
+            card,
+            name: name,
+            category: category,
+            frontImage: frontChanged ? frontImage : nil,
+            backImage: backChanged ? backImage : nil,
+            clearBackImage: backChanged && backImage == nil,
+            notes: notes.isEmpty ? nil : notes
+        )
         dismiss()
     }
 }

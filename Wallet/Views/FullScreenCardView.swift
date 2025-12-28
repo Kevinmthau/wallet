@@ -19,31 +19,13 @@ struct FullScreenCardView: View {
 
                 VStack(spacing: 0) {
                     // Card display area
-                    ZStack {
-                        // Front of card
-                        if let frontImage = card.frontImage {
-                            Image(uiImage: frontImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .opacity(showingBack ? 0 : 1)
-                                .rotation3DEffect(
-                                    .degrees(showingBack ? 180 : 0),
-                                    axis: (x: 0, y: 1, z: 0)
-                                )
-                        }
-
-                        // Back of card
-                        if card.hasBack, let backImage = card.backImage {
-                            Image(uiImage: backImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .opacity(showingBack ? 1 : 0)
-                                .rotation3DEffect(
-                                    .degrees(showingBack ? 0 : -180),
-                                    axis: (x: 0, y: 1, z: 0)
-                                )
-                        }
-                    }
+                    FlippableCardView(
+                        frontImage: card.frontImage,
+                        backImage: card.backImage,
+                        hasBack: card.hasBack,
+                        showingBack: $showingBack,
+                        showPlaceholders: false
+                    )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(20)
                     .onTapGesture {

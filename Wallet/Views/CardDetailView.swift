@@ -2,7 +2,7 @@ import SwiftUI
 
 struct CardDetailView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.managedObjectContext) private var viewContext
+    @Environment(CardStore.self) private var cardStore
 
     let card: Card
 
@@ -17,25 +17,12 @@ struct CardDetailView: View {
             GeometryReader { geometry in
                 VStack(spacing: 24) {
                     // Card Image with flip animation
-                    ZStack {
-                        // Front of card
-                        cardImage(card.frontImage, placeholder: "Front")
-                            .opacity(showingBack ? 0 : 1)
-                            .rotation3DEffect(
-                                .degrees(showingBack ? 180 : 0),
-                                axis: (x: 0, y: 1, z: 0)
-                            )
-
-                        // Back of card
-                        if card.hasBack {
-                            cardImage(card.backImage, placeholder: "Back")
-                                .opacity(showingBack ? 1 : 0)
-                                .rotation3DEffect(
-                                    .degrees(showingBack ? 0 : -180),
-                                    axis: (x: 0, y: 1, z: 0)
-                                )
-                        }
-                    }
+                    FlippableCardView(
+                        frontImage: card.frontImage,
+                        backImage: card.backImage,
+                        hasBack: card.hasBack,
+                        showingBack: $showingBack
+                    )
                     .frame(maxWidth: geometry.size.width - 32)
                     .aspectRatio(1.586, contentMode: .fit) // Standard card ratio
                     .scaleEffect(scale)
@@ -182,29 +169,8 @@ struct CardDetailView: View {
         }
     }
 
-    @ViewBuilder
-    private func cardImage(_ image: UIImage?, placeholder: String) -> some View {
-        Group {
-            if let image = image {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            } else {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(.secondarySystemBackground))
-                    .overlay {
-                        Text(placeholder)
-                            .foregroundStyle(.secondary)
-                    }
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
-    }
-
     private func toggleFavorite() {
-        card.isFavorite.toggle()
-        try? viewContext.save()
+        cardStore.toggleFavorite(card)
     }
 }
 

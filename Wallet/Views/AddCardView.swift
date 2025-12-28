@@ -3,7 +3,7 @@ import VisionKit
 
 struct AddCardView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.managedObjectContext) private var viewContext
+    @Environment(CardStore.self) private var cardStore
 
     @State private var name = ""
     @State private var category: CardCategory = .membership
@@ -36,7 +36,7 @@ struct AddCardView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
 
-                        imagePickerButton(
+                        CardImagePickerButton(
                             image: frontImage,
                             placeholder: "Scan front of card",
                             onScan: {
@@ -61,7 +61,7 @@ struct AddCardView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
 
-                        imagePickerButton(
+                        CardImagePickerButton(
                             image: backImage,
                             placeholder: "Scan back of card",
                             onScan: {
@@ -153,97 +153,24 @@ struct AddCardView: View {
         }
     }
 
-    @ViewBuilder
-    private func imagePickerButton(
-        image: UIImage?,
-        placeholder: String,
-        onScan: @escaping () -> Void,
-        onEnhance: @escaping () -> Void,
-        onRemove: @escaping () -> Void
-    ) -> some View {
-        if let image = image {
-            // Show captured image with options
-            VStack(spacing: 8) {
-                ZStack(alignment: .topTrailing) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxHeight: 150)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                    Button {
-                        onRemove()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title2)
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(.white, .red)
-                    }
-                    .offset(x: 8, y: -8)
-                }
-
-                HStack(spacing: 12) {
-                    Button {
-                        onScan()
-                    } label: {
-                        Label("Rescan", systemImage: "doc.viewfinder")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        onEnhance()
-                    } label: {
-                        Label("Enhance", systemImage: "wand.and.stars")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-        } else {
-            // Tap to scan directly
-            Button {
-                onScan()
-            } label: {
-                HStack {
-                    Image(systemName: "doc.viewfinder")
-                    Text(placeholder)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 100)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
     private func enhanceImage(_ image: UIImage, completion: @escaping (UIImage) -> Void) {
         isEnhancing = true
-        DispatchQueue.global(qos: .userInitiated).async {
-            let enhanced = ImageEnhancer.shared.enhanceAsDocument(image)
-            DispatchQueue.main.async {
-                completion(enhanced)
-                isEnhancing = false
-            }
+        ImageEnhancer.shared.enhanceAsDocumentAsync(image) { enhanced in
+            completion(enhanced)
+            isEnhancing = false
         }
     }
 
     private func saveCard() {
         guard let frontImage = frontImage else { return }
 
-        let card = Card(context: viewContext)
-        card.id = UUID()
-        card.name = name
-        card.category = category
-        card.frontImageData = frontImage.jpegData(compressionQuality: 0.8)
-        card.backImageData = backImage?.jpegData(compressionQuality: 0.8)
-        card.notes = notes.isEmpty ? nil : notes
-        card.isFavorite = false
-        card.createdAt = Date()
-        card.lastAccessedAt = Date()
-
-        try? viewContext.save()
+        cardStore.addCard(
+            name: name,
+            category: category,
+            frontImage: frontImage,
+            backImage: backImage,
+            notes: notes.isEmpty ? nil : notes
+        )
         dismiss()
     }
 }
