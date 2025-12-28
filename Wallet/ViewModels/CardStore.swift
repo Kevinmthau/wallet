@@ -1,6 +1,7 @@
 import Foundation
 import CoreData
 import SwiftUI
+import os
 
 @Observable
 class CardStore {
@@ -78,6 +79,7 @@ class CardStore {
     }
 
     func delete(_ card: Card) {
+        AppLogger.data.info("CardStore.delete: \(card.name)")
         context.delete(card)
         save()
     }
@@ -117,7 +119,12 @@ class CardStore {
 
     private func save() {
         if context.hasChanges {
-            try? context.save()
+            do {
+                try context.save()
+                AppLogger.data.info("CardStore.save: success")
+            } catch {
+                AppLogger.data.error("CardStore.save failed: \(error.localizedDescription)")
+            }
         }
     }
 }

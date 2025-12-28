@@ -26,6 +26,7 @@ struct EditCardView: View {
     @State private var selectedBackItem: PhotosPickerItem?
 
     @State private var isEnhancing = false
+    @State private var showingDeleteConfirmation = false
 
     enum ScanTarget {
         case front, back
@@ -131,6 +132,30 @@ struct EditCardView: View {
                 } header: {
                     Text("Notes")
                 }
+
+                Section {
+                    Button(role: .destructive) {
+                        showingDeleteConfirmation = true
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Text("Delete Card")
+                            Spacer()
+                        }
+                    }
+                }
+            }
+            .confirmationDialog("Delete Card", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
+                Button("Delete", role: .destructive) {
+                    let cardToDelete = card
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        cardStore.delete(cardToDelete)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Are you sure you want to delete this card? This cannot be undone.")
             }
             .navigationTitle("Edit Card")
             .navigationBarTitleDisplayMode(.inline)

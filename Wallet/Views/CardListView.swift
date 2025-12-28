@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreData
+import os
 
 struct CardListView: View {
     @Environment(\.managedObjectContext) private var viewContext
@@ -17,7 +18,7 @@ struct CardListView: View {
     @State private var selectedCard: Card?
     @State private var cardToEdit: Card?
     @State private var showingAddCard = false
-    @State private var expandedCardId: UUID?
+    @State private var isStackExpanded = false
     @State private var searchText = ""
 
     private let cardHeight = Constants.CardLayout.cardHeight
@@ -64,7 +65,7 @@ struct CardListView: View {
                 AddCardView()
             }
             .sheet(item: $cardToEdit) { card in
-                CardDetailView(card: card)
+                EditCardView(card: card)
             }
             .fullScreenCover(item: $selectedCard) { card in
                 FullScreenCardView(card: card)
@@ -87,25 +88,28 @@ struct CardListView: View {
 
     private var cardStack: some View {
         ScrollView {
-            LazyVStack(spacing: 0) {
+            LazyVStack(spacing: isStackExpanded ? 8 : 0) {
                 ForEach(Array(filteredCards.enumerated()), id: \.element.id) { index, card in
                     CardStackItem(
                         card: card,
                         index: index,
                         totalCards: filteredCards.count,
                         cardHeight: cardHeight,
-                        isExpanded: expandedCardId == card.id,
+                        isStackExpanded: isStackExpanded,
                         onTap: {
                             withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                                if expandedCardId == card.id {
+                                if isStackExpanded {
+                                    AppLogger.ui.info("Card tapped: \(card.name) - opening full screen")
                                     selectedCard = card
                                     cardStore.markAccessed(card)
                                 } else {
-                                    expandedCardId = card.id
+                                    AppLogger.ui.info("Stack tapped - expanding cards")
+                                    isStackExpanded = true
                                 }
                             }
                         },
                         onLongPress: {
+                            AppLogger.ui.info("Card long-pressed: \(card.name) - opening edit")
                             cardToEdit = card
                         },
                         onFavoriteToggle: {
@@ -126,9 +130,15 @@ struct CardListView: View {
             .padding(.bottom, 100)
         }
         .scrollIndicators(.hidden)
-        .onTapGesture {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                expandedCardId = nil
+        .background {
+            if isStackExpanded {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            isStackExpanded = false
+                        }
+                    }
             }
         }
     }
@@ -139,7 +149,7 @@ struct CardStackItem: View {
     let index: Int
     let totalCards: Int
     let cardHeight: CGFloat
-    let isExpanded: Bool
+    let isStackExpanded: Bool
     let onTap: () -> Void
     let onLongPress: () -> Void
     let onFavoriteToggle: () -> Void
@@ -151,13 +161,7 @@ struct CardStackItem: View {
         WalletCardView(card: card)
             .frame(height: cardHeight)
             .padding(.horizontal, 16)
-            .offset(y: isExpanded ? 0 : -CGFloat(index) * (cardHeight - cardSpacing))
-            .shadow(
-                color: .black.opacity(0.15),
-                radius: 8,
-                x: 0,
-                y: 4
-            )
+            .contentShape(VisibleCardShape(isTopCard: index == 0, isExpanded: isStackExpanded, cardSpacing: cardSpacing))
             .onTapGesture {
                 onTap()
             }
@@ -166,6 +170,34 @@ struct CardStackItem: View {
                 generator.impactOccurred()
                 onLongPress()
             }
+            .offset(y: isStackExpanded ? 0 : -CGFloat(index) * (cardHeight - cardSpacing))
+            .shadow(
+                color: .black.opacity(0.15),
+                radius: 8,
+                x: 0,
+                y: 4
+            )
+    }
+}
+
+struct VisibleCardShape: Shape {
+    let isTopCard: Bool
+    let isExpanded: Bool
+    let cardSpacing: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        if isTopCard || isExpanded {
+            return Path(rect)
+        } else {
+            // Only the bottom strip (visible portion) is tappable
+            let visibleRect = CGRect(
+                x: rect.minX,
+                y: rect.maxY - cardSpacing,
+                width: rect.width,
+                height: cardSpacing
+            )
+            return Path(visibleRect)
+        }
     }
 }
 

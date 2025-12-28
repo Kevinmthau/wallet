@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 
 struct CardDetailView: View {
     @Environment(\.dismiss) private var dismiss
@@ -11,11 +12,23 @@ struct CardDetailView: View {
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
     @State private var showingEdit = false
+    @State private var showingDeleteConfirmation = false
+
+    private var cardAspectRatio: CGFloat {
+        guard let image = card.frontImage else { return 1.586 }
+        let ratio = image.size.width / image.size.height
+        AppLogger.ui.debug("Card aspect ratio: \(ratio) (w: \(image.size.width), h: \(image.size.height))")
+        return ratio
+    }
+
+    private var isPortrait: Bool {
+        cardAspectRatio < 1.0
+    }
 
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
-                VStack(spacing: 24) {
+                VStack(spacing: isPortrait ? 16 : 24) {
                     // Card Image with flip animation
                     FlippableCardView(
                         frontImage: card.frontImage,
@@ -23,8 +36,9 @@ struct CardDetailView: View {
                         hasBack: card.hasBack,
                         showingBack: $showingBack
                     )
-                    .frame(maxWidth: geometry.size.width - 32)
-                    .aspectRatio(1.586, contentMode: .fit) // Standard card ratio
+                    .frame(maxWidth: max(0, geometry.size.width - 32))
+                    .frame(maxHeight: isPortrait ? geometry.size.height * 0.6 : nil)
+                    .aspectRatio(cardAspectRatio, contentMode: .fit)
                     .scaleEffect(scale)
                     .offset(offset)
                     .gesture(
@@ -158,10 +172,34 @@ struct CardDetailView: View {
                                 Label("Copy Notes", systemImage: "doc.on.doc")
                             }
                         }
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            showingDeleteConfirmation = true
+                        } label: {
+                            Label("Delete Card", systemImage: "trash")
+                        }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
                 }
+            }
+            .confirmationDialog("Delete Card", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
+                Button("Delete", role: .destructive) {
+                    AppLogger.ui.info("Deleting card: \(card.name)")
+                    let cardToDelete = card
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        AppLogger.data.info("Executing card deletion")
+                        cardStore.delete(cardToDelete)
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    AppLogger.ui.info("Card deletion cancelled")
+                }
+            } message: {
+                Text("Are you sure you want to delete this card? This cannot be undone.")
             }
             .sheet(isPresented: $showingEdit) {
                 EditCardView(card: card)

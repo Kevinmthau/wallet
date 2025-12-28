@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 
 struct FullScreenCardView: View {
     @Environment(\.dismiss) private var dismiss
@@ -6,6 +7,7 @@ struct FullScreenCardView: View {
 
     @State private var showingBack = false
     @State private var brightness: CGFloat = UIScreen.main.brightness
+    @State private var dragOffset: CGFloat = 0
 
     var body: some View {
         GeometryReader { geometry in
@@ -53,6 +55,26 @@ struct FullScreenCardView: View {
                     }
                     .padding(.bottom, 40)
                 }
+                .offset(y: dragOffset)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            if value.translation.height > 0 {
+                                dragOffset = value.translation.height
+                            }
+                        }
+                        .onEnded { value in
+                            if value.translation.height > 100 {
+                                AppLogger.ui.info("Swipe down to dismiss - offset: \(value.translation.height)")
+                                dismiss()
+                            } else {
+                                AppLogger.ui.debug("Swipe cancelled - offset: \(value.translation.height)")
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    dragOffset = 0
+                                }
+                            }
+                        }
+                )
 
                 // Close button
                 VStack {
