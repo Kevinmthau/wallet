@@ -15,40 +15,42 @@ class CardStore {
 
     // MARK: - Fetch Requests
 
-    var favoriteCards: [Card] {
+    private func fetch(
+        predicate: NSPredicate? = nil,
+        sortDescriptors: [NSSortDescriptor] = [NSSortDescriptor(keyPath: \Card.name, ascending: true)],
+        fetchLimit: Int? = nil
+    ) -> [Card] {
         let request = Card.fetchRequest() as! NSFetchRequest<Card>
-        request.predicate = NSPredicate(format: "isFavorite == YES")
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \Card.name, ascending: true)]
+        request.predicate = predicate
+        request.sortDescriptors = sortDescriptors
+        if let limit = fetchLimit {
+            request.fetchLimit = limit
+        }
         return (try? context.fetch(request)) ?? []
+    }
+
+    var favoriteCards: [Card] {
+        fetch(predicate: NSPredicate(format: "isFavorite == YES"))
     }
 
     var recentCards: [Card] {
-        let request = Card.fetchRequest() as! NSFetchRequest<Card>
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \Card.lastAccessedAt, ascending: false)]
-        request.fetchLimit = 5
-        return (try? context.fetch(request)) ?? []
+        fetch(
+            sortDescriptors: [NSSortDescriptor(keyPath: \Card.lastAccessedAt, ascending: false)],
+            fetchLimit: 5
+        )
     }
 
     var allCards: [Card] {
-        let request = Card.fetchRequest() as! NSFetchRequest<Card>
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \Card.name, ascending: true)]
-        return (try? context.fetch(request)) ?? []
+        fetch()
     }
 
     func cards(for category: CardCategory) -> [Card] {
-        let request = Card.fetchRequest() as! NSFetchRequest<Card>
-        request.predicate = NSPredicate(format: "categoryRaw == %@", category.rawValue)
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \Card.name, ascending: true)]
-        return (try? context.fetch(request)) ?? []
+        fetch(predicate: NSPredicate(format: "categoryRaw == %@", category.rawValue))
     }
 
     func filteredCards(searchText: String) -> [Card] {
         guard !searchText.isEmpty else { return allCards }
-
-        let request = Card.fetchRequest() as! NSFetchRequest<Card>
-        request.predicate = NSPredicate(format: "name CONTAINS[cd] %@", searchText)
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \Card.name, ascending: true)]
-        return (try? context.fetch(request)) ?? []
+        return fetch(predicate: NSPredicate(format: "name CONTAINS[cd] %@", searchText))
     }
 
     var cardsByCategory: [(category: CardCategory, cards: [Card])] {

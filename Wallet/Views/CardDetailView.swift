@@ -202,7 +202,7 @@ struct CardDetailView: View {
                 Text("Are you sure you want to delete this card? This cannot be undone.")
             }
             .sheet(isPresented: $showingEdit) {
-                EditCardView(card: card)
+                CardFormView(mode: .edit(card))
             }
         }
     }

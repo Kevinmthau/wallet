@@ -6,7 +6,7 @@ struct AutoCaptureScanner: View {
     @Environment(\.dismiss) private var dismiss
     let onCapture: (UIImage) -> Void
 
-    @StateObject private var camera = CameraModel()
+    @StateObject private var camera = CameraManager()
     @State private var detectedRectangle: VNRectangleObservation?
     @State private var isCapturing = false
     @State private var captureProgress: CGFloat = 0
@@ -111,6 +111,8 @@ struct AutoCaptureScanner: View {
         }
     }
 
+    // MARK: - Detection Handling
+
     private func handleRectangleDetection(_ observation: VNRectangleObservation?) {
         guard !isCapturing else { return }
 
@@ -151,19 +153,13 @@ struct AutoCaptureScanner: View {
         }
     }
 
+    // MARK: - Capture
+
     private func manualCapture() {
         guard !isCapturing else { return }
         isCapturing = true
 
-        // Flash effect
-        withAnimation(.easeIn(duration: 0.1)) {
-            showFlash = true
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            withAnimation(.easeOut(duration: 0.1)) {
-                showFlash = false
-            }
-        }
+        triggerFlash()
 
         camera.capturePhoto { image in
             if let image = image {
@@ -186,15 +182,7 @@ struct AutoCaptureScanner: View {
         guard let observation = detectedRectangle else { return }
         isCapturing = true
 
-        // Flash effect
-        withAnimation(.easeIn(duration: 0.1)) {
-            showFlash = true
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            withAnimation(.easeOut(duration: 0.1)) {
-                showFlash = false
-            }
-        }
+        triggerFlash()
 
         camera.capturePhoto { image in
             if let image = image {
@@ -207,6 +195,19 @@ struct AutoCaptureScanner: View {
             dismiss()
         }
     }
+
+    private func triggerFlash() {
+        withAnimation(.easeIn(duration: 0.1)) {
+            showFlash = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            withAnimation(.easeOut(duration: 0.1)) {
+                showFlash = false
+            }
+        }
+    }
+
+    // MARK: - Image Processing
 
     private func fixImageOrientation(_ image: UIImage) -> UIImage {
         if image.imageOrientation == .up {
@@ -325,252 +326,5 @@ struct AutoCaptureScanner: View {
         UIGraphicsEndImageContext()
 
         return rotatedImage ?? image
-    }
-}
-
-// MARK: - Card Overlay
-
-struct CardOverlay: View {
-    let observation: VNRectangleObservation
-    let size: CGSize
-    let progress: CGFloat
-
-    var body: some View {
-        ZStack {
-            // Corner brackets
-            CardCorners(observation: observation, size: size)
-                .stroke(
-                    progress > 0.5 ? Color.green : Color.white,
-                    style: StrokeStyle(lineWidth: 4, lineCap: .round)
-                )
-
-            // Progress ring in center
-            if progress > 0 {
-                Circle()
-                    .trim(from: 0, to: progress)
-                    .stroke(Color.green, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                    .frame(width: 50, height: 50)
-                    .rotationEffect(.degrees(-90))
-                    .position(
-                        x: size.width * (observation.boundingBox.midX),
-                        y: size.height * (1 - observation.boundingBox.midY)
-                    )
-            }
-        }
-    }
-}
-
-struct CardCorners: Shape {
-    let observation: VNRectangleObservation
-    let size: CGSize
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-
-        let cornerLength: CGFloat = 30
-
-        let topLeft = CGPoint(
-            x: observation.topLeft.x * size.width,
-            y: (1 - observation.topLeft.y) * size.height
-        )
-        let topRight = CGPoint(
-            x: observation.topRight.x * size.width,
-            y: (1 - observation.topRight.y) * size.height
-        )
-        let bottomRight = CGPoint(
-            x: observation.bottomRight.x * size.width,
-            y: (1 - observation.bottomRight.y) * size.height
-        )
-        let bottomLeft = CGPoint(
-            x: observation.bottomLeft.x * size.width,
-            y: (1 - observation.bottomLeft.y) * size.height
-        )
-
-        // Top-left corner
-        path.move(to: CGPoint(x: topLeft.x, y: topLeft.y + cornerLength))
-        path.addLine(to: topLeft)
-        path.addLine(to: CGPoint(x: topLeft.x + cornerLength, y: topLeft.y))
-
-        // Top-right corner
-        path.move(to: CGPoint(x: topRight.x - cornerLength, y: topRight.y))
-        path.addLine(to: topRight)
-        path.addLine(to: CGPoint(x: topRight.x, y: topRight.y + cornerLength))
-
-        // Bottom-right corner
-        path.move(to: CGPoint(x: bottomRight.x, y: bottomRight.y - cornerLength))
-        path.addLine(to: bottomRight)
-        path.addLine(to: CGPoint(x: bottomRight.x - cornerLength, y: bottomRight.y))
-
-        // Bottom-left corner
-        path.move(to: CGPoint(x: bottomLeft.x + cornerLength, y: bottomLeft.y))
-        path.addLine(to: bottomLeft)
-        path.addLine(to: CGPoint(x: bottomLeft.x, y: bottomLeft.y - cornerLength))
-
-        return path
-    }
-}
-
-// MARK: - Camera Preview View
-
-class CameraPreviewUIView: UIView {
-    var previewLayer: AVCaptureVideoPreviewLayer?
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        previewLayer?.frame = bounds
-    }
-
-    func setup(session: AVCaptureSession) {
-        let previewLayer = AVCaptureVideoPreviewLayer(session: session)
-        previewLayer.videoGravity = .resizeAspectFill
-        previewLayer.frame = bounds
-        layer.addSublayer(previewLayer)
-        self.previewLayer = previewLayer
-    }
-}
-
-struct CameraPreviewView: UIViewRepresentable {
-    let session: AVCaptureSession
-
-    func makeUIView(context: Context) -> CameraPreviewUIView {
-        let view = CameraPreviewUIView()
-        view.backgroundColor = .black
-        view.setup(session: session)
-        return view
-    }
-
-    func updateUIView(_ uiView: CameraPreviewUIView, context: Context) {
-        uiView.previewLayer?.frame = uiView.bounds
-    }
-}
-
-// MARK: - Camera Model
-
-class CameraModel: NSObject, ObservableObject {
-    let session = AVCaptureSession()
-    private let output = AVCapturePhotoOutput()
-    private let videoOutput = AVCaptureVideoDataOutput()
-    private let queue = DispatchQueue(label: "camera.queue")
-
-    var onRectangleDetected: ((VNRectangleObservation?) -> Void)?
-    private var photoCaptureCompletion: ((UIImage?) -> Void)?
-
-    private var lastDetectionTime = Date()
-    private let detectionInterval: TimeInterval = 0.1
-
-    override init() {
-        super.init()
-        setupSession()
-    }
-
-    private func setupSession() {
-        session.beginConfiguration()
-        session.sessionPreset = .photo
-
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
-              let input = try? AVCaptureDeviceInput(device: device) else {
-            session.commitConfiguration()
-            return
-        }
-
-        if session.canAddInput(input) {
-            session.addInput(input)
-        }
-
-        if session.canAddOutput(output) {
-            session.addOutput(output)
-        }
-
-        videoOutput.setSampleBufferDelegate(self, queue: queue)
-        videoOutput.alwaysDiscardsLateVideoFrames = true
-        if session.canAddOutput(videoOutput) {
-            session.addOutput(videoOutput)
-        }
-
-        // Set video orientation
-        if let connection = videoOutput.connection(with: .video) {
-            if connection.isVideoRotationAngleSupported(90) {
-                connection.videoRotationAngle = 90
-            }
-        }
-
-        session.commitConfiguration()
-    }
-
-    func start() {
-        if !session.isRunning {
-            queue.async {
-                self.session.startRunning()
-            }
-        }
-    }
-
-    func stop() {
-        if session.isRunning {
-            queue.async {
-                self.session.stopRunning()
-            }
-        }
-    }
-
-    func capturePhoto(completion: @escaping (UIImage?) -> Void) {
-        photoCaptureCompletion = completion
-
-        let settings = AVCapturePhotoSettings()
-        output.capturePhoto(with: settings, delegate: self)
-    }
-
-    private func detectRectangle(in image: CVPixelBuffer) {
-        let request = VNDetectRectanglesRequest { [weak self] request, error in
-            guard let results = request.results as? [VNRectangleObservation],
-                  let rect = results.first else {
-                DispatchQueue.main.async {
-                    self?.onRectangleDetected?(nil)
-                }
-                return
-            }
-
-            DispatchQueue.main.async {
-                self?.onRectangleDetected?(rect)
-            }
-        }
-
-        // More forgiving detection settings
-        request.minimumAspectRatio = 0.3  // Allow more variety
-        request.maximumAspectRatio = 3.0  // Allow portrait cards too
-        request.minimumSize = 0.05        // Detect smaller cards (5% of frame)
-        request.minimumConfidence = 0.3   // Lower confidence threshold
-        request.maximumObservations = 1
-        request.quadratureTolerance = 30  // Allow up to 30° angle deviation
-
-        let handler = VNImageRequestHandler(cvPixelBuffer: image, orientation: .up, options: [:])
-        try? handler.perform([request])
-    }
-}
-
-extension CameraModel: AVCaptureVideoDataOutputSampleBufferDelegate {
-    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        let now = Date()
-        guard now.timeIntervalSince(lastDetectionTime) >= detectionInterval else { return }
-        lastDetectionTime = now
-
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        detectRectangle(in: pixelBuffer)
-    }
-}
-
-extension CameraModel: AVCapturePhotoCaptureDelegate {
-    func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
-        guard let data = photo.fileDataRepresentation(),
-              let image = UIImage(data: data) else {
-            DispatchQueue.main.async {
-                self.photoCaptureCompletion?(nil)
-            }
-            return
-        }
-
-        DispatchQueue.main.async {
-            self.photoCaptureCompletion?(image)
-        }
     }
 }

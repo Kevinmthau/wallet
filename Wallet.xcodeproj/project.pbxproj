@@ -7,16 +7,19 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		12E87248BA0546F3BAF76F1E /* AddCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B724729FD2D5169BE3A9BABD /* AddCardView.swift */; };
 		1CA575A845A155814EFCA106 /* Card.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC62403B132ADD2B50590C4B /* Card.swift */; };
 		2C1BB2190FFDEFF5F976AC08 /* WalletApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22347D546016DE147C289EE3 /* WalletApp.swift */; };
 		3B023DC1BEF530E78FDB20DC /* CardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CF6BBE68709C820F2BA353D /* CardStore.swift */; };
 		4648A3A5D3F5E2F876E8C976 /* AutoCaptureScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22A52EE835F13EAFAE213A87 /* AutoCaptureScanner.swift */; };
+		5D19B39DA32AFFEB989F4A5C /* WalletCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D05F70390E060D4BA9CF5F86 /* WalletCardView.swift */; };
 		5FD3907358216AF07EA707B2 /* CardImagePickerButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50300A6AB9CECE957BAE5380 /* CardImagePickerButton.swift */; };
+		642C9527EEB5C5698F773C42 /* ScannerOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 542E70E5A9DB9228F9B0830A /* ScannerOverlay.swift */; };
 		6A79ED10A0110C8419C036E2 /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45C21C23390F434397E46C83 /* AppLogger.swift */; };
 		7ABA4045B1316CAACB352479 /* Persistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9314A4606DD40FB63D062AD /* Persistence.swift */; };
-		8518D0686F451A4D703A525F /* EditCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F5130A18DDF3768A270F348 /* EditCardView.swift */; };
+		83DF1E439B7C955DB49C03C9 /* CardFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 363F2E49D010D98F78204A95 /* CardFormView.swift */; };
 		8B3C9BF1161BCECD7DC8DF1B /* FullScreenCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A4B7C21AE45C4C73B7E25F8 /* FullScreenCardView.swift */; };
+		8EF79C608ED1D91CF554A8AC /* CameraPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6E9DD45B48C6C2BF1893C7D /* CameraPreviewView.swift */; };
+		98395919BEB03BD673222FCA /* CameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B813C3D1CC0EB2607E044B82 /* CameraManager.swift */; };
 		9EBDDED8EE67BDBD1D5C8F4A /* CardDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA8700A2B56FE6A7857C4B71 /* CardDetailView.swift */; };
 		A4F7ACA20BBE0FB97FED9B99 /* CardListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64E555060DBBA21957883DA7 /* CardListView.swift */; };
 		AA456C3D7562970BC2E6CA35 /* ImageEnhancer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F57D986500652E7184F2E7 /* ImageEnhancer.swift */; };
@@ -29,18 +32,21 @@
 		0CF6BBE68709C820F2BA353D /* CardStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardStore.swift; sourceTree = "<group>"; };
 		22347D546016DE147C289EE3 /* WalletApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletApp.swift; sourceTree = "<group>"; };
 		22A52EE835F13EAFAE213A87 /* AutoCaptureScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoCaptureScanner.swift; sourceTree = "<group>"; };
-		3F5130A18DDF3768A270F348 /* EditCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditCardView.swift; sourceTree = "<group>"; };
+		363F2E49D010D98F78204A95 /* CardFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardFormView.swift; sourceTree = "<group>"; };
 		45C21C23390F434397E46C83 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
 		4E1BCE25844903F13DDA2128 /* FlippableCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlippableCardView.swift; sourceTree = "<group>"; };
 		50300A6AB9CECE957BAE5380 /* CardImagePickerButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardImagePickerButton.swift; sourceTree = "<group>"; };
+		542E70E5A9DB9228F9B0830A /* ScannerOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerOverlay.swift; sourceTree = "<group>"; };
 		54AB96E420A6B19A4884EF58 /* Wallet.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Wallet.entitlements; sourceTree = "<group>"; };
 		5535878A8999DA792296D9FF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		64E555060DBBA21957883DA7 /* CardListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardListView.swift; sourceTree = "<group>"; };
 		999FE9EDD8A482B03322CDB5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		9A4B7C21AE45C4C73B7E25F8 /* FullScreenCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenCardView.swift; sourceTree = "<group>"; };
-		B724729FD2D5169BE3A9BABD /* AddCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddCardView.swift; sourceTree = "<group>"; };
+		B813C3D1CC0EB2607E044B82 /* CameraManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraManager.swift; sourceTree = "<group>"; };
 		BC3D48818093E241D9AD9D12 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
+		D05F70390E060D4BA9CF5F86 /* WalletCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletCardView.swift; sourceTree = "<group>"; };
 		D2F57D986500652E7184F2E7 /* ImageEnhancer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageEnhancer.swift; sourceTree = "<group>"; };
+		E6E9DD45B48C6C2BF1893C7D /* CameraPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreviewView.swift; sourceTree = "<group>"; };
 		EA8700A2B56FE6A7857C4B71 /* CardDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDetailView.swift; sourceTree = "<group>"; };
 		EF8855F2C58459BCFD012811 /* Wallet.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Wallet.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F9314A4606DD40FB63D062AD /* Persistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Persistence.swift; sourceTree = "<group>"; };
@@ -76,8 +82,11 @@
 			isa = PBXGroup;
 			children = (
 				22A52EE835F13EAFAE213A87 /* AutoCaptureScanner.swift */,
+				E6E9DD45B48C6C2BF1893C7D /* CameraPreviewView.swift */,
 				50300A6AB9CECE957BAE5380 /* CardImagePickerButton.swift */,
 				4E1BCE25844903F13DDA2128 /* FlippableCardView.swift */,
+				542E70E5A9DB9228F9B0830A /* ScannerOverlay.swift */,
+				D05F70390E060D4BA9CF5F86 /* WalletCardView.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -95,6 +104,7 @@
 			isa = PBXGroup;
 			children = (
 				45C21C23390F434397E46C83 /* AppLogger.swift */,
+				B813C3D1CC0EB2607E044B82 /* CameraManager.swift */,
 				D2F57D986500652E7184F2E7 /* ImageEnhancer.swift */,
 			);
 			path = Utilities;
@@ -103,10 +113,9 @@
 		D440579A8F1873F4DE27700A /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				B724729FD2D5169BE3A9BABD /* AddCardView.swift */,
 				EA8700A2B56FE6A7857C4B71 /* CardDetailView.swift */,
+				363F2E49D010D98F78204A95 /* CardFormView.swift */,
 				64E555060DBBA21957883DA7 /* CardListView.swift */,
-				3F5130A18DDF3768A270F348 /* EditCardView.swift */,
 				9A4B7C21AE45C4C73B7E25F8 /* FullScreenCardView.swift */,
 				53135AD3790DA755A428D300 /* Components */,
 			);
@@ -199,21 +208,24 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				12E87248BA0546F3BAF76F1E /* AddCardView.swift in Sources */,
 				6A79ED10A0110C8419C036E2 /* AppLogger.swift in Sources */,
 				4648A3A5D3F5E2F876E8C976 /* AutoCaptureScanner.swift in Sources */,
+				98395919BEB03BD673222FCA /* CameraManager.swift in Sources */,
+				8EF79C608ED1D91CF554A8AC /* CameraPreviewView.swift in Sources */,
 				1CA575A845A155814EFCA106 /* Card.swift in Sources */,
 				9EBDDED8EE67BDBD1D5C8F4A /* CardDetailView.swift in Sources */,
+				83DF1E439B7C955DB49C03C9 /* CardFormView.swift in Sources */,
 				5FD3907358216AF07EA707B2 /* CardImagePickerButton.swift in Sources */,
 				A4F7ACA20BBE0FB97FED9B99 /* CardListView.swift in Sources */,
 				3B023DC1BEF530E78FDB20DC /* CardStore.swift in Sources */,
 				BE655780D69F31706DCFEFF6 /* Constants.swift in Sources */,
-				8518D0686F451A4D703A525F /* EditCardView.swift in Sources */,
 				CB648D4C69CE18D3E93BFA72 /* FlippableCardView.swift in Sources */,
 				8B3C9BF1161BCECD7DC8DF1B /* FullScreenCardView.swift in Sources */,
 				AA456C3D7562970BC2E6CA35 /* ImageEnhancer.swift in Sources */,
 				7ABA4045B1316CAACB352479 /* Persistence.swift in Sources */,
+				642C9527EEB5C5698F773C42 /* ScannerOverlay.swift in Sources */,
 				2C1BB2190FFDEFF5F976AC08 /* WalletApp.swift in Sources */,
+				5D19B39DA32AFFEB989F4A5C /* WalletCardView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

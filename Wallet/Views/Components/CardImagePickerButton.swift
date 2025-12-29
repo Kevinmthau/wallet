@@ -94,5 +94,6 @@ struct CardImagePickerButton: View {
         .frame(height: 100)
         .background(Color(.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .contentShape(Rectangle())
     }
 }

@@ -8,6 +8,7 @@ struct FullScreenCardView: View {
     @State private var showingBack = false
     @State private var brightness: CGFloat = UIScreen.main.brightness
     @State private var dragOffset: CGFloat = 0
+    @State private var showingEditSheet = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -56,8 +57,8 @@ struct FullScreenCardView: View {
                     .padding(.bottom, 40)
                 }
                 .offset(y: dragOffset)
-                .gesture(
-                    DragGesture()
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 20)
                         .onChanged { value in
                             if value.translation.height > 0 {
                                 dragOffset = value.translation.height
@@ -76,10 +77,20 @@ struct FullScreenCardView: View {
                         }
                 )
 
-                // Close button
+                // Top bar with edit and close buttons
                 VStack {
                     HStack {
+                        Button {
+                            showingEditSheet = true
+                        } label: {
+                            Image(systemName: "pencil.circle.fill")
+                                .font(.title)
+                                .foregroundStyle(.white.opacity(0.8))
+                        }
+                        .padding()
+
                         Spacer()
+
                         Button {
                             dismiss()
                         } label: {
@@ -103,5 +114,8 @@ struct FullScreenCardView: View {
             UIScreen.main.brightness = brightness
         }
         .statusBarHidden()
+        .sheet(isPresented: $showingEditSheet) {
+            CardFormView(mode: .edit(card))
+        }
     }
 }
