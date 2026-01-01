@@ -89,16 +89,16 @@ struct PersistenceController {
         }
 
         // Configure for CloudKit sync
-        guard let description = container.persistentStoreDescriptions.first else {
-            fatalError("No persistent store description found")
+        if let description = container.persistentStoreDescriptions.first {
+            description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
+            description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+        } else {
+            AppLogger.data.error("PersistenceController: No persistent store description found - CloudKit sync may not work")
         }
-
-        description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
-        description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
 
         container.loadPersistentStores { _, error in
             if let error = error as NSError? {
-                fatalError("Unresolved error \(error), \(error.userInfo)")
+                AppLogger.data.error("PersistenceController: Failed to load persistent store: \(error.localizedDescription), \(error.userInfo)")
             }
         }
 
@@ -140,7 +140,7 @@ struct PersistenceController {
             do {
                 try context.save()
             } catch {
-                print("Error saving context: \(error)")
+                AppLogger.data.error("PersistenceController.save failed: \(error.localizedDescription)")
             }
         }
     }

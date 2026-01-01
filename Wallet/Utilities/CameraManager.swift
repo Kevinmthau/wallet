@@ -23,14 +23,21 @@ class CameraManager: NSObject, ObservableObject {
         session.beginConfiguration()
         session.sessionPreset = .photo
 
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
-              let input = try? AVCaptureDeviceInput(device: device) else {
+        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
+            AppLogger.scanner.error("CameraManager: No back camera available")
             session.commitConfiguration()
             return
         }
 
-        if session.canAddInput(input) {
-            session.addInput(input)
+        do {
+            let input = try AVCaptureDeviceInput(device: device)
+            if session.canAddInput(input) {
+                session.addInput(input)
+            }
+        } catch {
+            AppLogger.scanner.error("CameraManager: Failed to create camera input: \(error.localizedDescription)")
+            session.commitConfiguration()
+            return
         }
 
         if session.canAddOutput(output) {
@@ -78,6 +85,10 @@ class CameraManager: NSObject, ObservableObject {
 
     private func detectRectangle(in image: CVPixelBuffer) {
         let request = VNDetectRectanglesRequest { [weak self] request, error in
+            if let error = error {
+                AppLogger.scanner.error("CameraManager: Rectangle detection callback error: \(error.localizedDescription)")
+            }
+
             guard let results = request.results as? [VNRectangleObservation],
                   let rect = results.first else {
                 DispatchQueue.main.async {
@@ -100,7 +111,11 @@ class CameraManager: NSObject, ObservableObject {
         request.quadratureTolerance = 30  // Allow up to 30° angle deviation
 
         let handler = VNImageRequestHandler(cvPixelBuffer: image, orientation: .up, options: [:])
-        try? handler.perform([request])
+        do {
+            try handler.perform([request])
+        } catch {
+            AppLogger.scanner.error("CameraManager: Rectangle detection failed: \(error.localizedDescription)")
+        }
     }
 }
 
@@ -117,8 +132,13 @@ extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
 
 extension CameraManager: AVCapturePhotoCaptureDelegate {
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        if let error = error {
+            AppLogger.scanner.error("CameraManager: Photo capture error: \(error.localizedDescription)")
+        }
+
         guard let data = photo.fileDataRepresentation(),
               let image = UIImage(data: data) else {
+            AppLogger.scanner.warning("CameraManager: Failed to get image from photo capture")
             DispatchQueue.main.async {
                 self.photoCaptureCompletion?(nil)
             }

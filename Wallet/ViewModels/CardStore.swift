@@ -26,7 +26,12 @@ class CardStore {
         if let limit = fetchLimit {
             request.fetchLimit = limit
         }
-        return (try? context.fetch(request)) ?? []
+        do {
+            return try context.fetch(request)
+        } catch {
+            AppLogger.data.error("CardStore.fetch failed: \(error.localizedDescription)")
+            return []
+        }
     }
 
     var favoriteCards: [Card] {

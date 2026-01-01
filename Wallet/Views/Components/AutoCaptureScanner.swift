@@ -2,13 +2,25 @@ import SwiftUI
 import AVFoundation
 @preconcurrency import Vision
 
+/// Result from card scanning containing image and optional OCR data
+struct ScanResult {
+    let image: UIImage
+    let extractedText: OCRExtractionResult?
+
+    init(image: UIImage, extractedText: OCRExtractionResult? = nil) {
+        self.image = image
+        self.extractedText = extractedText
+    }
+}
+
 struct AutoCaptureScanner: View {
     @Environment(\.dismiss) private var dismiss
-    let onCapture: (UIImage) -> Void
+    let onCapture: (ScanResult) -> Void
 
     @StateObject private var camera = CameraManager()
     @State private var detectedRectangle: VNRectangleObservation?
     @State private var isCapturing = false
+    @State private var isProcessingOCR = false
     @State private var captureProgress: CGFloat = 0
     @State private var showFlash = false
     @State private var stableFrameCount = 0
@@ -37,6 +49,21 @@ struct AutoCaptureScanner: View {
                 Color.white
                     .ignoresSafeArea()
                     .transition(.opacity)
+            }
+
+            // OCR processing indicator
+            if isProcessingOCR {
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                        .tint(.white)
+                    Text("Extracting text...")
+                        .font(.subheadline)
+                        .foregroundStyle(.white)
+                }
+                .padding(24)
+                .background(.black.opacity(0.7))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
             }
 
             // UI overlay
@@ -163,18 +190,30 @@ struct AutoCaptureScanner: View {
 
         camera.capturePhoto { image in
             if let image = image {
-                let orientedImage = self.fixImageOrientation(image)
+                let orientedImage = CardImageProcessor.shared.fixImageOrientation(image)
+                let finalImage: UIImage
+
                 // If we have a detected rectangle, use it for perspective correction
                 if let observation = self.detectedRectangle {
-                    let corrected = self.correctPerspective(image: orientedImage, observation: observation)
-                    self.onCapture(corrected ?? orientedImage)
+                    finalImage = CardImageProcessor.shared.correctPerspective(image: orientedImage, observation: observation) ?? orientedImage
                 } else {
                     // No rectangle detected, just fix orientation
-                    let finalImage = self.ensureProperOrientation(orientedImage)
-                    self.onCapture(finalImage)
+                    finalImage = CardImageProcessor.shared.ensureProperOrientation(orientedImage)
                 }
+
+                // Perform OCR asynchronously
+                self.isProcessingOCR = true
+                Task {
+                    let ocrResult = await OCRExtractor.shared.extractText(from: finalImage)
+                    await MainActor.run {
+                        self.isProcessingOCR = false
+                        self.onCapture(ScanResult(image: finalImage, extractedText: ocrResult))
+                        self.dismiss()
+                    }
+                }
+            } else {
+                self.dismiss()
             }
-            self.dismiss()
         }
     }
 
@@ -187,12 +226,23 @@ struct AutoCaptureScanner: View {
         camera.capturePhoto { image in
             if let image = image {
                 // Fix orientation first
-                let orientedImage = fixImageOrientation(image)
+                let orientedImage = CardImageProcessor.shared.fixImageOrientation(image)
                 // Apply perspective correction
-                let corrected = correctPerspective(image: orientedImage, observation: observation)
-                onCapture(corrected ?? orientedImage)
+                let finalImage = CardImageProcessor.shared.correctPerspective(image: orientedImage, observation: observation) ?? orientedImage
+
+                // Perform OCR asynchronously
+                self.isProcessingOCR = true
+                Task {
+                    let ocrResult = await OCRExtractor.shared.extractText(from: finalImage)
+                    await MainActor.run {
+                        self.isProcessingOCR = false
+                        self.onCapture(ScanResult(image: finalImage, extractedText: ocrResult))
+                        self.dismiss()
+                    }
+                }
+            } else {
+                self.dismiss()
             }
-            dismiss()
         }
     }
 
@@ -205,126 +255,5 @@ struct AutoCaptureScanner: View {
                 showFlash = false
             }
         }
-    }
-
-    // MARK: - Image Processing
-
-    private func fixImageOrientation(_ image: UIImage) -> UIImage {
-        if image.imageOrientation == .up {
-            return image
-        }
-
-        UIGraphicsBeginImageContextWithOptions(image.size, false, image.scale)
-        image.draw(in: CGRect(origin: .zero, size: image.size))
-        let normalizedImage = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
-
-        return normalizedImage ?? image
-    }
-
-    private func correctPerspective(image: UIImage, observation: VNRectangleObservation) -> UIImage? {
-        guard let ciImage = CIImage(image: image) else { return nil }
-
-        let imageSize = ciImage.extent.size
-
-        let topLeft = CGPoint(
-            x: observation.topLeft.x * imageSize.width,
-            y: observation.topLeft.y * imageSize.height
-        )
-        let topRight = CGPoint(
-            x: observation.topRight.x * imageSize.width,
-            y: observation.topRight.y * imageSize.height
-        )
-        let bottomLeft = CGPoint(
-            x: observation.bottomLeft.x * imageSize.width,
-            y: observation.bottomLeft.y * imageSize.height
-        )
-        let bottomRight = CGPoint(
-            x: observation.bottomRight.x * imageSize.width,
-            y: observation.bottomRight.y * imageSize.height
-        )
-
-        let filter = CIFilter.perspectiveCorrection()
-        filter.inputImage = ciImage
-        filter.topLeft = topLeft
-        filter.topRight = topRight
-        filter.bottomLeft = bottomLeft
-        filter.bottomRight = bottomRight
-
-        guard let output = filter.outputImage else { return nil }
-
-        let context = CIContext()
-        guard let cgImage = context.createCGImage(output, from: output.extent) else { return nil }
-
-        // Determine if we need to rotate based on aspect ratio
-        let correctedImage = UIImage(cgImage: cgImage)
-        return ensureProperOrientation(correctedImage)
-    }
-
-    private func ensureProperOrientation(_ image: UIImage) -> UIImage {
-        // Use text detection to determine if text is readable
-        guard let ciImage = CIImage(image: image) else { return image }
-
-        var needsRotation = false
-        let semaphore = DispatchSemaphore(value: 0)
-
-        let request = VNRecognizeTextRequest { request, error in
-            defer { semaphore.signal() }
-
-            guard let observations = request.results as? [VNRecognizedTextObservation],
-                  !observations.isEmpty else { return }
-
-            // Analyze text bounding boxes to determine if text is sideways
-            var horizontalTextCount = 0
-            var verticalTextCount = 0
-
-            for observation in observations.prefix(10) {
-                let box = observation.boundingBox
-                // Text blocks are wider than tall when readable horizontally
-                if box.width > box.height {
-                    horizontalTextCount += 1
-                } else {
-                    verticalTextCount += 1
-                }
-            }
-
-            // If most text appears vertical (sideways), we need to rotate
-            needsRotation = verticalTextCount > horizontalTextCount
-        }
-
-        request.recognitionLevel = .fast
-        request.usesLanguageCorrection = false
-
-        let handler = VNImageRequestHandler(ciImage: ciImage, options: [:])
-        try? handler.perform([request])
-
-        // Wait briefly for detection (with timeout)
-        _ = semaphore.wait(timeout: .now() + 0.5)
-
-        // Only rotate if text detection says text is sideways
-        if needsRotation {
-            return rotateImage(image, by: .pi / 2)
-        }
-
-        // Keep original orientation - respect portrait cards
-        return image
-    }
-
-    private func rotateImage(_ image: UIImage, by radians: CGFloat) -> UIImage {
-        let rotatedSize = CGSize(width: image.size.height, height: image.size.width)
-
-        UIGraphicsBeginImageContextWithOptions(rotatedSize, false, image.scale)
-        guard let context = UIGraphicsGetCurrentContext() else { return image }
-
-        context.translateBy(x: rotatedSize.width / 2, y: rotatedSize.height / 2)
-        context.rotate(by: radians)
-        context.translateBy(x: -image.size.width / 2, y: -image.size.height / 2)
-
-        image.draw(at: .zero)
-
-        let rotatedImage = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
-
-        return rotatedImage ?? image
     }
 }

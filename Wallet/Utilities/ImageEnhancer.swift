@@ -125,23 +125,15 @@ class ImageEnhancer {
         return filter.outputImage ?? image
     }
 
-    // MARK: - Perspective Correction (if needed beyond document scanner)
+    // MARK: - Perspective Correction
 
     func correctPerspective(_ image: UIImage, topLeft: CGPoint, topRight: CGPoint, bottomLeft: CGPoint, bottomRight: CGPoint) -> UIImage {
-        guard let ciImage = CIImage(image: image) else { return image }
-
-        let filter = CIFilter.perspectiveCorrection()
-        filter.inputImage = ciImage
-        filter.topLeft = topLeft
-        filter.topRight = topRight
-        filter.bottomLeft = bottomLeft
-        filter.bottomRight = bottomRight
-
-        guard let output = filter.outputImage,
-              let cgImage = context.createCGImage(output, from: output.extent) else {
-            return image
-        }
-
-        return UIImage(cgImage: cgImage, scale: image.scale, orientation: image.imageOrientation)
+        CardImageProcessor.shared.correctPerspective(
+            image,
+            topLeft: topLeft,
+            topRight: topRight,
+            bottomLeft: bottomLeft,
+            bottomRight: bottomRight
+        ) ?? image
     }
 }

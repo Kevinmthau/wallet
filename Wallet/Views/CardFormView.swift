@@ -12,30 +12,16 @@ struct CardFormView: View {
 
     let mode: CardFormMode
 
+    // Consolidated image state
+    @State private var imageState: CardImageState
+
+    // Form fields
     @State private var name: String
     @State private var category: CardCategory
     @State private var notes: String
-    @State private var frontImage: UIImage?
-    @State private var backImage: UIImage?
-    @State private var frontChanged = false
-    @State private var backChanged = false
-
-    @State private var showingScanner = false
-    @State private var scannerTarget: ScanTarget = .front
-
-    @State private var showingFrontPicker = false
-    @State private var showingBackPicker = false
-    @State private var selectedFrontItem: PhotosPickerItem?
-    @State private var selectedBackItem: PhotosPickerItem?
-
-    @State private var isEnhancing = false
     @State private var showingDeleteConfirmation = false
 
     @FocusState private var focusedField: FormField?
-
-    private enum ScanTarget {
-        case front, back
-    }
 
     private enum FormField {
         case name, notes
@@ -56,7 +42,7 @@ struct CardFormView: View {
     }
 
     private var canSave: Bool {
-        !name.isEmpty && frontImage != nil
+        !name.isEmpty && imageState.frontImage != nil
     }
 
     init(mode: CardFormMode) {
@@ -66,21 +52,22 @@ struct CardFormView: View {
             _name = State(initialValue: "")
             _category = State(initialValue: .membership)
             _notes = State(initialValue: "")
-            _frontImage = State(initialValue: nil)
-            _backImage = State(initialValue: nil)
+            _imageState = State(initialValue: CardImageState())
         case .edit(let card):
             _name = State(initialValue: card.name)
             _category = State(initialValue: card.category)
             _notes = State(initialValue: card.notes ?? "")
-            _frontImage = State(initialValue: card.frontImage)
-            _backImage = State(initialValue: card.backImage)
+            _imageState = State(initialValue: CardImageState(
+                frontImage: card.frontImage,
+                backImage: card.backImage
+            ))
         }
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                cardImagesSection
+                CardImagesSection(imageState: imageState, isEditMode: isEditMode)
                 cardDetailsSection
                 notesSection
 
@@ -127,42 +114,29 @@ struct CardFormView: View {
                 }
             }
             .photosPicker(
-                isPresented: $showingFrontPicker,
-                selection: $selectedFrontItem,
+                isPresented: $imageState.showingFrontPicker,
+                selection: $imageState.selectedFrontItem,
                 matching: .images
             )
             .photosPicker(
-                isPresented: $showingBackPicker,
-                selection: $selectedBackItem,
+                isPresented: $imageState.showingBackPicker,
+                selection: $imageState.selectedBackItem,
                 matching: .images
             )
-            .onChange(of: selectedFrontItem) { _, item in
-                loadAndEnhanceImage(from: item) { image in
-                    frontImage = image
-                    frontChanged = true
-                }
+            .onChange(of: imageState.selectedFrontItem) { _, item in
+                imageState.loadAndEnhanceImage(from: item, for: .front, isEditMode: isEditMode)
             }
-            .onChange(of: selectedBackItem) { _, item in
-                loadAndEnhanceImage(from: item) { image in
-                    backImage = image
-                    backChanged = true
-                }
+            .onChange(of: imageState.selectedBackItem) { _, item in
+                imageState.loadAndEnhanceImage(from: item, for: .back, isEditMode: isEditMode)
             }
-            .fullScreenCover(isPresented: $showingScanner) {
-                AutoCaptureScanner { scannedImage in
-                    let enhanced = ImageEnhancer.shared.enhance(scannedImage)
-                    switch scannerTarget {
-                    case .front:
-                        frontImage = enhanced
-                        if isEditMode { frontChanged = true }
-                    case .back:
-                        backImage = enhanced
-                        if isEditMode { backChanged = true }
-                    }
+            .fullScreenCover(isPresented: $imageState.showingScanner) {
+                AutoCaptureScanner { scanResult in
+                    imageState.handleScanResult(scanResult, isEditMode: isEditMode)
+                    updateNotesFromOCR()
                 }
             }
             .overlay {
-                if isEnhancing {
+                if imageState.isEnhancing {
                     ZStack {
                         Color.black.opacity(0.3)
                         ProgressView("Enhancing...")
@@ -177,74 +151,6 @@ struct CardFormView: View {
     }
 
     // MARK: - Sections
-
-    private var cardImagesSection: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Front of Card")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                CardImagePickerButton(
-                    image: frontImage,
-                    placeholder: "Scan front of card",
-                    onScan: {
-                        scannerTarget = .front
-                        showingScanner = true
-                    },
-                    onLibrary: isEditMode ? { showingFrontPicker = true } : nil,
-                    onEnhance: {
-                        if let img = frontImage {
-                            enhanceImage(img) { enhanced in
-                                frontImage = enhanced
-                                if isEditMode { frontChanged = true }
-                            }
-                        }
-                    },
-                    onRemove: {
-                        frontImage = nil
-                        if isEditMode { frontChanged = true }
-                    }
-                )
-            }
-            .padding(.vertical, 4)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Back of Card (Optional)")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                CardImagePickerButton(
-                    image: backImage,
-                    placeholder: "Scan back of card",
-                    onScan: {
-                        scannerTarget = .back
-                        showingScanner = true
-                    },
-                    onLibrary: isEditMode ? { showingBackPicker = true } : nil,
-                    onEnhance: {
-                        if let img = backImage {
-                            enhanceImage(img) { enhanced in
-                                backImage = enhanced
-                                if isEditMode { backChanged = true }
-                            }
-                        }
-                    },
-                    onRemove: {
-                        backImage = nil
-                        if isEditMode { backChanged = true }
-                    }
-                )
-            }
-            .padding(.vertical, 4)
-        } header: {
-            Text("Card Images")
-        } footer: {
-            Text(isEditMode
-                 ? "Use Scan for best results. Tap Enhance to improve clarity."
-                 : "Use Scan for best results. Images are automatically enhanced for clarity.")
-        }
-    }
 
     private var cardDetailsSection: some View {
         Section {
@@ -293,36 +199,17 @@ struct CardFormView: View {
 
     // MARK: - Actions
 
-    private func loadAndEnhanceImage(from item: PhotosPickerItem?, completion: @escaping (UIImage?) -> Void) {
-        guard let item = item else { return }
+    private func updateNotesFromOCR() {
+        guard notes.isEmpty else { return }
 
-        isEnhancing = true
-        item.loadTransferable(type: Data.self) { result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let data):
-                    if let data = data, let image = UIImage(data: data) {
-                        let enhanced = ImageEnhancer.shared.enhance(image)
-                        completion(enhanced)
-                    }
-                case .failure:
-                    completion(nil)
-                }
-                isEnhancing = false
-            }
-        }
-    }
-
-    private func enhanceImage(_ image: UIImage, completion: @escaping (UIImage) -> Void) {
-        isEnhancing = true
-        ImageEnhancer.shared.enhanceAsDocumentAsync(image) { enhanced in
-            completion(enhanced)
-            isEnhancing = false
+        let allTexts = imageState.collectOCRTexts()
+        if !allTexts.isEmpty {
+            notes = allTexts.joined(separator: "\n")
         }
     }
 
     private func save() {
-        guard let frontImage = frontImage else { return }
+        guard let frontImage = imageState.frontImage else { return }
 
         switch mode {
         case .add:
@@ -330,7 +217,7 @@ struct CardFormView: View {
                 name: name,
                 category: category,
                 frontImage: frontImage,
-                backImage: backImage,
+                backImage: imageState.backImage,
                 notes: notes.isEmpty ? nil : notes
             )
         case .edit(let card):
@@ -338,9 +225,9 @@ struct CardFormView: View {
                 card,
                 name: name,
                 category: category,
-                frontImage: frontChanged ? frontImage : nil,
-                backImage: backChanged ? backImage : nil,
-                clearBackImage: backChanged && backImage == nil,
+                frontImage: imageState.frontChanged ? frontImage : nil,
+                backImage: imageState.backChanged ? imageState.backImage : nil,
+                clearBackImage: imageState.backChanged && imageState.backImage == nil,
                 notes: notes.isEmpty ? nil : notes
             )
         }
