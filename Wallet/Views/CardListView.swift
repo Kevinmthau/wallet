@@ -18,58 +18,96 @@ struct CardListView: View {
     @State private var selectedCard: Card?
     @State private var cardToEdit: Card?
     @State private var showingAddCard = false
-    @State private var isStackExpanded = false
-    @State private var searchText = ""
 
     private let cardHeight = Constants.CardLayout.cardHeight
     private let cardSpacing = Constants.CardLayout.cardSpacing
-    private let expandedSpacing = Constants.CardLayout.expandedSpacing
 
-    private var filteredCards: [Card] {
-        if searchText.isEmpty {
-            return Array(allCards)
-        }
-        return allCards.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    private var cards: [Card] {
+        Array(allCards)
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                // Background gradient like Apple Wallet
-                LinearGradient(
-                    colors: [Color(.systemBackground), Color(.systemGray6)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+        VStack(spacing: 0) {
+            // Apple Wallet style header
+            HStack {
+                Text("Wallet")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
 
-                if allCards.isEmpty {
-                    emptyState
-                } else {
-                    cardStack
-                }
-            }
-            .navigationTitle("Wallet")
-            .searchable(text: $searchText, prompt: "Search")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+                Spacer()
+
+                // Button group in white pill
+                HStack(spacing: 0) {
                     Button {
                         showingAddCard = true
                     } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title2)
+                        Image(systemName: "plus")
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .frame(width: 44, height: 36)
+                    }
+
+                    Divider()
+                        .frame(height: 20)
+
+                    Button {
+                        // Search action (placeholder)
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .frame(width: 44, height: 36)
+                    }
+
+                    Divider()
+                        .frame(height: 20)
+
+                    Button {
+                        // More action (placeholder)
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .frame(width: 44, height: 36)
                     }
                 }
+                .foregroundStyle(.primary)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(.systemBackground))
+                        .shadow(color: .black.opacity(0.08), radius: 2, x: 0, y: 1)
+                )
             }
-            .sheet(isPresented: $showingAddCard) {
-                CardFormView(mode: .add)
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 12)
+
+            // Cards immediately below
+            if allCards.isEmpty {
+                Spacer()
+                emptyState
+                Spacer()
+            } else {
+                cardStack
+                Spacer(minLength: 0)
             }
-            .sheet(item: $cardToEdit) { card in
-                CardFormView(mode: .edit(card))
-            }
-            .fullScreenCover(item: $selectedCard) { card in
-                FullScreenCardView(card: card)
-            }
+        }
+        .background(
+            LinearGradient(
+                colors: [Color(.systemBackground), Color(.systemGray6)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+        )
+        .sheet(isPresented: $showingAddCard) {
+            CardFormView(mode: .add)
+        }
+        .sheet(item: $cardToEdit) { card in
+            CardFormView(mode: .edit(card))
+        }
+        .fullScreenCover(item: $selectedCard) { card in
+            FullScreenCardView(card: card)
         }
     }
 
@@ -86,61 +124,44 @@ struct CardListView: View {
         }
     }
 
+    private var stackedHeight: CGFloat {
+        cardHeight + CGFloat(max(0, cards.count - 1)) * cardSpacing
+    }
+
     private var cardStack: some View {
-        ScrollView {
-            LazyVStack(spacing: isStackExpanded ? 8 : 0) {
-                ForEach(Array(filteredCards.enumerated()), id: \.element.id) { index, card in
-                    CardStackItem(
-                        card: card,
-                        index: index,
-                        totalCards: filteredCards.count,
-                        cardHeight: cardHeight,
-                        isStackExpanded: isStackExpanded,
-                        onTap: {
-                            if isStackExpanded || filteredCards.count == 1 {
-                                AppLogger.ui.info("Card tapped: \(card.name) - opening full screen")
-                                selectedCard = card
-                                cardStore.markAccessed(card)
-                            } else {
-                                AppLogger.ui.info("Stack tapped - expanding cards")
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                                    isStackExpanded = true
-                                }
-                            }
-                        },
-                        onLongPress: {
-                            AppLogger.ui.info("Card long-pressed: \(card.name) - opening edit")
-                            cardToEdit = card
-                        },
-                        onFavoriteToggle: {
-                            withAnimation {
-                                cardStore.toggleFavorite(card)
-                            }
-                        },
-                        onDelete: {
-                            withAnimation {
-                                cardStore.delete(card)
-                            }
+        ZStack(alignment: .top) {
+            ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
+                let isFrontCard = index == cards.count - 1
+                CardStackItem(
+                    card: card,
+                    index: index,
+                    totalCards: cards.count,
+                    cardHeight: cardHeight,
+                    isFrontCard: isFrontCard,
+                    onTap: {
+                        AppLogger.ui.info("Card tapped: \(card.name) - opening full screen")
+                        selectedCard = card
+                        cardStore.markAccessed(card)
+                    },
+                    onLongPress: {
+                        cardToEdit = card
+                    },
+                    onFavoriteToggle: {
+                        withAnimation {
+                            cardStore.toggleFavorite(card)
                         }
-                    )
-                    .zIndex(Double(filteredCards.count - index))
-                }
-            }
-            .padding(.top, 20)
-            .padding(.bottom, 100)
-        }
-        .scrollIndicators(.hidden)
-        .background {
-            if isStackExpanded {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            isStackExpanded = false
+                    },
+                    onDelete: {
+                        withAnimation {
+                            cardStore.delete(card)
                         }
                     }
+                )
+                .offset(y: CGFloat(index) * cardSpacing)
+                .zIndex(Double(index))
             }
         }
+        .frame(height: stackedHeight, alignment: .top)
     }
 }
 
@@ -149,7 +170,7 @@ struct CardStackItem: View {
     let index: Int
     let totalCards: Int
     let cardHeight: CGFloat
-    let isStackExpanded: Bool
+    var isFrontCard: Bool = false
     let onTap: () -> Void
     let onLongPress: () -> Void
     let onFavoriteToggle: () -> Void
@@ -161,7 +182,7 @@ struct CardStackItem: View {
         WalletCardView(card: card)
             .frame(height: cardHeight)
             .padding(.horizontal, 16)
-            .contentShape(VisibleCardShape(isTopCard: index == 0, isExpanded: isStackExpanded, cardSpacing: cardSpacing))
+            .contentShape(VisibleCardShape(isFrontCard: isFrontCard, cardSpacing: cardSpacing))
             .onTapGesture {
                 onTap()
             }
@@ -185,7 +206,6 @@ struct CardStackItem: View {
                     Label("Delete", systemImage: "trash")
                 }
             }
-            .offset(y: isStackExpanded ? 0 : -CGFloat(index) * (cardHeight - cardSpacing))
             .shadow(
                 color: .black.opacity(0.15),
                 radius: 8,
@@ -196,18 +216,18 @@ struct CardStackItem: View {
 }
 
 struct VisibleCardShape: Shape {
-    let isTopCard: Bool
-    let isExpanded: Bool
+    let isFrontCard: Bool
     let cardSpacing: CGFloat
 
     func path(in rect: CGRect) -> Path {
-        if isTopCard || isExpanded {
+        if isFrontCard {
+            // Front card: entire card is tappable
             return Path(rect)
         } else {
-            // Only the bottom strip (visible portion) is tappable
+            // Back cards: only the TOP strip (visible portion with label) is tappable
             let visibleRect = CGRect(
                 x: rect.minX,
-                y: rect.maxY - cardSpacing,
+                y: rect.minY,
                 width: rect.width,
                 height: cardSpacing
             )
