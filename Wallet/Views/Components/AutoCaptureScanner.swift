@@ -183,66 +183,55 @@ struct AutoCaptureScanner: View {
     // MARK: - Capture
 
     private func manualCapture() {
+        performCapture(with: detectedRectangle)
+    }
+
+    private func captureImage() {
+        guard detectedRectangle != nil else { return }
+        performCapture(with: detectedRectangle)
+    }
+
+    /// Unified capture method that handles both auto and manual capture
+    private func performCapture(with observation: VNRectangleObservation?) {
         guard !isCapturing else { return }
         isCapturing = true
 
         triggerFlash()
 
         camera.capturePhoto { image in
-            if let image = image {
-                let orientedImage = CardImageProcessor.shared.fixImageOrientation(image)
-                let finalImage: UIImage
-
-                // If we have a detected rectangle, use it for perspective correction
-                if let observation = self.detectedRectangle {
-                    finalImage = CardImageProcessor.shared.correctPerspective(image: orientedImage, observation: observation) ?? orientedImage
-                } else {
-                    // No rectangle detected, just fix orientation
-                    finalImage = CardImageProcessor.shared.ensureProperOrientation(orientedImage)
-                }
-
-                // Perform OCR asynchronously
-                self.isProcessingOCR = true
-                Task {
-                    let ocrResult = await OCRExtractor.shared.extractText(from: finalImage)
-                    await MainActor.run {
-                        self.isProcessingOCR = false
-                        self.onCapture(ScanResult(image: finalImage, extractedText: ocrResult))
-                        self.dismiss()
-                    }
-                }
-            } else {
+            guard let image = image else {
                 self.dismiss()
+                return
+            }
+
+            Task {
+                let finalImage = await self.processCapture(image: image, observation: observation)
+
+                self.isProcessingOCR = true
+                let ocrResult = await OCRExtractor.shared.extractText(from: finalImage)
+
+                await MainActor.run {
+                    self.isProcessingOCR = false
+                    self.onCapture(ScanResult(image: finalImage, extractedText: ocrResult))
+                    self.dismiss()
+                }
             }
         }
     }
 
-    private func captureImage() {
-        guard let observation = detectedRectangle else { return }
-        isCapturing = true
+    /// Processes captured image with perspective correction and orientation fix
+    private func processCapture(image: UIImage, observation: VNRectangleObservation?) async -> UIImage {
+        let orientedImage = CardImageProcessor.shared.fixImageOrientation(image)
 
-        triggerFlash()
-
-        camera.capturePhoto { image in
-            if let image = image {
-                // Fix orientation first
-                let orientedImage = CardImageProcessor.shared.fixImageOrientation(image)
-                // Apply perspective correction
-                let finalImage = CardImageProcessor.shared.correctPerspective(image: orientedImage, observation: observation) ?? orientedImage
-
-                // Perform OCR asynchronously
-                self.isProcessingOCR = true
-                Task {
-                    let ocrResult = await OCRExtractor.shared.extractText(from: finalImage)
-                    await MainActor.run {
-                        self.isProcessingOCR = false
-                        self.onCapture(ScanResult(image: finalImage, extractedText: ocrResult))
-                        self.dismiss()
-                    }
-                }
-            } else {
-                self.dismiss()
-            }
+        if let observation = observation {
+            // Use async perspective correction (includes orientation check)
+            return await CardImageProcessor.shared.correctPerspectiveAsync(
+                image: orientedImage,
+                observation: observation
+            ) ?? orientedImage
+        } else {
+            // No rectangle detected - use async orientation check
+            return await CardImageProcessor.shared.ensureProperOrientationAsync(orientedImage)
         }
     }
 

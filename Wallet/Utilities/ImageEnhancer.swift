@@ -2,8 +2,13 @@ import UIKit
 import CoreImage
 import CoreImage.CIFilterBuiltins
 
+/// Shared CIContext for all image processing operations (expensive to create)
+enum ImageProcessingContext {
+    static let shared = CIContext()
+}
+
 class ImageEnhancer {
-    private let context = CIContext()
+    private let context = ImageProcessingContext.shared
 
     static let shared = ImageEnhancer()
 
@@ -33,6 +38,16 @@ class ImageEnhancer {
         }
 
         return UIImage(cgImage: cgImage, scale: image.scale, orientation: image.imageOrientation)
+    }
+
+    /// Async enhancement on background thread
+    func enhanceAsync(_ image: UIImage) async -> UIImage {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let enhanced = self.enhance(image)
+                continuation.resume(returning: enhanced)
+            }
+        }
     }
 
     /// Async document enhancement on background thread
@@ -123,17 +138,5 @@ class ImageEnhancer {
         let filter = CIFilter.photoEffectNoir()
         filter.inputImage = image
         return filter.outputImage ?? image
-    }
-
-    // MARK: - Perspective Correction
-
-    func correctPerspective(_ image: UIImage, topLeft: CGPoint, topRight: CGPoint, bottomLeft: CGPoint, bottomRight: CGPoint) -> UIImage {
-        CardImageProcessor.shared.correctPerspective(
-            image,
-            topLeft: topLeft,
-            topRight: topRight,
-            bottomLeft: bottomLeft,
-            bottomRight: bottomRight
-        ) ?? image
     }
 }

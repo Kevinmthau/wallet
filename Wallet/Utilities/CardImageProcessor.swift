@@ -6,8 +6,8 @@ import CoreImage.CIFilterBuiltins
 class CardImageProcessor {
     static let shared = CardImageProcessor()
 
-    // Single CIContext reused across all operations (expensive to create)
-    private let context = CIContext()
+    // Use shared CIContext from ImageEnhancer (expensive to create, should be reused)
+    private let context = ImageProcessingContext.shared
 
     private init() {}
 
@@ -46,7 +46,83 @@ class CardImageProcessor {
         return rotatedImage ?? image
     }
 
-    /// Uses text detection to determine if image needs rotation for proper reading orientation
+    /// Uses text detection to determine if image needs rotation for proper reading orientation (async version)
+    func ensureProperOrientationAsync(_ image: UIImage) async -> UIImage {
+        guard let ciImage = CIImage(image: image) else {
+            AppLogger.scanner.warning("CardImageProcessor: Failed to create CIImage for orientation check")
+            return image
+        }
+
+        return await withCheckedContinuation { continuation in
+            var needsRotation = false
+            var hasResumed = false
+
+            let request = VNRecognizeTextRequest { request, error in
+                guard !hasResumed else { return }
+
+                if let error = error {
+                    AppLogger.scanner.error("CardImageProcessor: Text recognition error: \(error.localizedDescription)")
+                    hasResumed = true
+                    continuation.resume(returning: image)
+                    return
+                }
+
+                guard let observations = request.results as? [VNRecognizedTextObservation],
+                      !observations.isEmpty else {
+                    hasResumed = true
+                    continuation.resume(returning: image)
+                    return
+                }
+
+                // Analyze text bounding boxes to determine if text is sideways
+                var horizontalTextCount = 0
+                var verticalTextCount = 0
+
+                for observation in observations.prefix(Constants.Scanner.maxTextBlocksForOrientation) {
+                    let box = observation.boundingBox
+                    if box.width > box.height {
+                        horizontalTextCount += 1
+                    } else {
+                        verticalTextCount += 1
+                    }
+                }
+
+                needsRotation = verticalTextCount > horizontalTextCount
+                hasResumed = true
+
+                if needsRotation {
+                    continuation.resume(returning: self.rotateImage(image, by: .pi / 2))
+                } else {
+                    continuation.resume(returning: image)
+                }
+            }
+
+            request.recognitionLevel = .fast
+            request.usesLanguageCorrection = false
+
+            let handler = VNImageRequestHandler(ciImage: ciImage, options: [:])
+            do {
+                try handler.perform([request])
+            } catch {
+                AppLogger.scanner.error("CardImageProcessor: Text orientation detection failed: \(error.localizedDescription)")
+                if !hasResumed {
+                    hasResumed = true
+                    continuation.resume(returning: image)
+                }
+            }
+
+            // Handle timeout
+            DispatchQueue.global().asyncAfter(deadline: .now() + Constants.Scanner.textDetectionTimeout) {
+                if !hasResumed {
+                    AppLogger.scanner.warning("CardImageProcessor: Text orientation detection timed out")
+                    hasResumed = true
+                    continuation.resume(returning: image)
+                }
+            }
+        }
+    }
+
+    /// Uses text detection to determine if image needs rotation for proper reading orientation (sync version - may block)
     func ensureProperOrientation(_ image: UIImage) -> UIImage {
         guard let ciImage = CIImage(image: image) else {
             AppLogger.scanner.warning("CardImageProcessor: Failed to create CIImage for orientation check")
@@ -167,7 +243,79 @@ class CardImageProcessor {
         )
     }
 
+    /// Async perspective correction using VNRectangleObservation - does not block
+    func correctPerspectiveAsync(image: UIImage, observation: VNRectangleObservation) async -> UIImage? {
+        guard let ciImage = CIImage(image: image) else {
+            AppLogger.scanner.warning("CardImageProcessor: Failed to create CIImage for perspective correction")
+            return nil
+        }
+
+        let imageSize = ciImage.extent.size
+
+        let topLeft = CGPoint(
+            x: observation.topLeft.x * imageSize.width,
+            y: observation.topLeft.y * imageSize.height
+        )
+        let topRight = CGPoint(
+            x: observation.topRight.x * imageSize.width,
+            y: observation.topRight.y * imageSize.height
+        )
+        let bottomLeft = CGPoint(
+            x: observation.bottomLeft.x * imageSize.width,
+            y: observation.bottomLeft.y * imageSize.height
+        )
+        let bottomRight = CGPoint(
+            x: observation.bottomRight.x * imageSize.width,
+            y: observation.bottomRight.y * imageSize.height
+        )
+
+        // Apply perspective correction (fast, synchronous operation)
+        guard let correctedImage = applyPerspectiveCorrectionOnly(
+            ciImage: ciImage,
+            topLeft: topLeft,
+            topRight: topRight,
+            bottomLeft: bottomLeft,
+            bottomRight: bottomRight,
+            scale: image.scale
+        ) else {
+            return nil
+        }
+
+        // Now do async orientation check (non-blocking)
+        return await ensureProperOrientationAsync(correctedImage)
+    }
+
     // MARK: - Private Helpers
+
+    /// Applies only perspective correction without orientation check
+    private func applyPerspectiveCorrectionOnly(
+        ciImage: CIImage,
+        topLeft: CGPoint,
+        topRight: CGPoint,
+        bottomLeft: CGPoint,
+        bottomRight: CGPoint,
+        scale: CGFloat,
+        orientation: UIImage.Orientation = .up
+    ) -> UIImage? {
+        let filter = CIFilter.perspectiveCorrection()
+        filter.inputImage = ciImage
+        filter.topLeft = topLeft
+        filter.topRight = topRight
+        filter.bottomLeft = bottomLeft
+        filter.bottomRight = bottomRight
+
+        guard let output = filter.outputImage else {
+            AppLogger.scanner.warning("CardImageProcessor: Perspective correction filter produced no output")
+            return nil
+        }
+
+        guard let cgImage = context.createCGImage(output, from: output.extent) else {
+            AppLogger.scanner.warning("CardImageProcessor: Failed to create CGImage from perspective correction")
+            return nil
+        }
+
+        return UIImage(cgImage: cgImage, scale: scale, orientation: orientation)
+    }
 
     private func applyPerspectiveCorrection(
         ciImage: CIImage,

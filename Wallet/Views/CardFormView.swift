@@ -76,14 +76,12 @@ struct CardFormView: View {
                 }
             }
             .scrollDismissesKeyboard(.interactively)
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") {
-                        focusedField = nil
-                    }
-                }
-            }
+            .cardFormToolbar(
+                canSave: canSave,
+                onDismissKeyboard: { focusedField = nil },
+                onCancel: { dismiss() },
+                onSave: save
+            )
             .confirmationDialog("Delete Card", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
                 Button("Delete", role: .destructive) {
                     if let card = cardToEdit {
@@ -99,54 +97,12 @@ struct CardFormView: View {
             }
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        save()
-                    }
-                    .disabled(!canSave)
-                }
-            }
-            .photosPicker(
-                isPresented: $imageState.showingFrontPicker,
-                selection: $imageState.selectedFrontItem,
-                matching: .images
+            .cardPhotoPickers(imageState: imageState, isEditMode: isEditMode)
+            .scannerOverlay(
+                imageState: imageState,
+                isEditMode: isEditMode,
+                onScanComplete: updateNotesFromOCR
             )
-            .photosPicker(
-                isPresented: $imageState.showingBackPicker,
-                selection: $imageState.selectedBackItem,
-                matching: .images
-            )
-            .onChange(of: imageState.selectedFrontItem) { _, item in
-                imageState.loadAndEnhanceImage(from: item, for: .front, isEditMode: isEditMode)
-            }
-            .onChange(of: imageState.selectedBackItem) { _, item in
-                imageState.loadAndEnhanceImage(from: item, for: .back, isEditMode: isEditMode)
-            }
-            .fullScreenCover(isPresented: $imageState.showingScanner) {
-                AutoCaptureScanner { scanResult in
-                    imageState.handleScanResult(scanResult, isEditMode: isEditMode)
-                    updateNotesFromOCR()
-                }
-            }
-            .overlay {
-                if imageState.isEnhancing {
-                    ZStack {
-                        Color.black.opacity(0.3)
-                        ProgressView("Enhancing...")
-                            .padding()
-                            .background(.regularMaterial)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                    .ignoresSafeArea()
-                }
-            }
         }
     }
 

@@ -38,16 +38,29 @@ class CardImageState {
     // MARK: - Scan Result Handling
 
     func handleScanResult(_ result: ScanResult, isEditMode: Bool) {
-        let enhanced = ImageEnhancer.shared.enhance(result.image)
-        switch scannerTarget {
+        // Store OCR result immediately, then enhance asynchronously
+        let target = scannerTarget
+        switch target {
         case .front:
-            frontImage = enhanced
             frontOCRResult = result.extractedText
-            if isEditMode { frontChanged = true }
         case .back:
-            backImage = enhanced
             backOCRResult = result.extractedText
-            if isEditMode { backChanged = true }
+        }
+
+        isEnhancing = true
+        Task {
+            let enhanced = await ImageEnhancer.shared.enhanceAsync(result.image)
+            await MainActor.run {
+                switch target {
+                case .front:
+                    self.frontImage = enhanced
+                    if isEditMode { self.frontChanged = true }
+                case .back:
+                    self.backImage = enhanced
+                    if isEditMode { self.backChanged = true }
+                }
+                self.isEnhancing = false
+            }
         }
     }
 
@@ -57,26 +70,30 @@ class CardImageState {
         guard let item = item else { return }
 
         isEnhancing = true
-        item.loadTransferable(type: Data.self) { [weak self] result in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                switch result {
-                case .success(let data):
-                    if let data = data, let image = UIImage(data: data) {
-                        let enhanced = ImageEnhancer.shared.enhance(image)
-                        switch target {
-                        case .front:
-                            self.frontImage = enhanced
-                            if isEditMode { self.frontChanged = true }
-                        case .back:
-                            self.backImage = enhanced
-                            if isEditMode { self.backChanged = true }
-                        }
-                    }
-                case .failure(let error):
-                    AppLogger.ui.error("CardImageState: Failed to load image: \(error.localizedDescription)")
+        Task {
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self),
+                      let image = UIImage(data: data) else {
+                    await MainActor.run { self.isEnhancing = false }
+                    return
                 }
-                self.isEnhancing = false
+
+                let enhanced = await ImageEnhancer.shared.enhanceAsync(image)
+
+                await MainActor.run {
+                    switch target {
+                    case .front:
+                        self.frontImage = enhanced
+                        if isEditMode { self.frontChanged = true }
+                    case .back:
+                        self.backImage = enhanced
+                        if isEditMode { self.backChanged = true }
+                    }
+                    self.isEnhancing = false
+                }
+            } catch {
+                AppLogger.ui.error("CardImageState: Failed to load image: \(error.localizedDescription)")
+                await MainActor.run { self.isEnhancing = false }
             }
         }
     }
