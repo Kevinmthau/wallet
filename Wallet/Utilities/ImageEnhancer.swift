@@ -36,11 +36,11 @@ class ImageEnhancer {
     }
 
     /// Async document enhancement on background thread
-    func enhanceAsDocumentAsync(_ image: UIImage, completion: @escaping (UIImage) -> Void) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            let enhanced = self.enhanceAsDocument(image)
-            DispatchQueue.main.async {
-                completion(enhanced)
+    func enhanceAsDocumentAsync(_ image: UIImage) async -> UIImage {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let enhanced = self.enhanceAsDocument(image)
+                continuation.resume(returning: enhanced)
             }
         }
     }
@@ -55,15 +55,15 @@ class ImageEnhancer {
         enhanced = autoAdjust(enhanced)
 
         // Strong sharpening for documents
-        enhanced = sharpen(enhanced, intensity: 0.8)
+        enhanced = sharpen(enhanced, intensity: Constants.Enhancement.documentSharpness)
 
         // High contrast
-        enhanced = adjustContrast(enhanced, contrast: 1.2)
+        enhanced = adjustContrast(enhanced, contrast: Constants.Enhancement.documentContrast)
 
         // Convert to B&W if requested (good for text-heavy cards)
         if blackAndWhite {
             enhanced = convertToGrayscale(enhanced)
-            enhanced = adjustContrast(enhanced, contrast: 1.3)
+            enhanced = adjustContrast(enhanced, contrast: Constants.Enhancement.bwContrast)
         }
 
         guard let cgImage = context.createCGImage(enhanced, from: enhanced.extent) else {
@@ -87,7 +87,7 @@ class ImageEnhancer {
         return output
     }
 
-    private func sharpen(_ image: CIImage, intensity: Float = 0.5) -> CIImage {
+    private func sharpen(_ image: CIImage, intensity: Float = Constants.Enhancement.defaultSharpness) -> CIImage {
         let filter = CIFilter.sharpenLuminance()
         filter.inputImage = image
         filter.sharpness = intensity
@@ -97,16 +97,16 @@ class ImageEnhancer {
     private func unsharpMask(_ image: CIImage) -> CIImage {
         let filter = CIFilter.unsharpMask()
         filter.inputImage = image
-        filter.radius = 2.5
-        filter.intensity = 0.5
+        filter.radius = Constants.Enhancement.unsharpMaskRadius
+        filter.intensity = Constants.Enhancement.unsharpMaskIntensity
         return filter.outputImage ?? image
     }
 
     private func reduceNoise(_ image: CIImage) -> CIImage {
         let filter = CIFilter.noiseReduction()
         filter.inputImage = image
-        filter.noiseLevel = 0.02
-        filter.sharpness = 0.4
+        filter.noiseLevel = Constants.Enhancement.noiseLevel
+        filter.sharpness = Constants.Enhancement.noiseSharpness
         return filter.outputImage ?? image
     }
 
@@ -114,7 +114,7 @@ class ImageEnhancer {
         let filter = CIFilter.colorControls()
         filter.inputImage = image
         filter.contrast = contrast
-        filter.saturation = 1.1
+        filter.saturation = Constants.Enhancement.saturation
         filter.brightness = 0.0
         return filter.outputImage ?? image
     }

@@ -25,7 +25,7 @@ struct AutoCaptureScanner: View {
     @State private var showFlash = false
     @State private var stableFrameCount = 0
 
-    private let requiredStableFrames = 10 // ~1 second at 10fps detection rate
+    private let requiredStableFrames = Constants.Scanner.requiredStableFrames
 
     var body: some View {
         ZStack {
@@ -145,7 +145,7 @@ struct AutoCaptureScanner: View {
 
         if let observation = observation {
             let area = observation.boundingBox.width * observation.boundingBox.height
-            if area > 0.03 { // Very small threshold - 3% of frame
+            if area > Constants.Scanner.minimumCardAreaRatio {
                 detectedRectangle = observation
                 stableFrameCount += 1
 
@@ -169,7 +169,7 @@ struct AutoCaptureScanner: View {
 
     private func resetDetection() {
         if stableFrameCount > 0 {
-            stableFrameCount = max(0, stableFrameCount - 2) // Decay slowly
+            stableFrameCount = max(0, stableFrameCount - Constants.Scanner.detectionDecayRate)
             let progress = CGFloat(stableFrameCount) / CGFloat(requiredStableFrames)
             withAnimation(.linear(duration: 0.1)) {
                 captureProgress = progress

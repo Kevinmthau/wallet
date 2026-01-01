@@ -71,7 +71,7 @@ class CardImageProcessor {
             var horizontalTextCount = 0
             var verticalTextCount = 0
 
-            for observation in observations.prefix(10) {
+            for observation in observations.prefix(Constants.Scanner.maxTextBlocksForOrientation) {
                 let box = observation.boundingBox
                 // Text blocks are wider than tall when readable horizontally
                 if box.width > box.height {
@@ -96,7 +96,7 @@ class CardImageProcessor {
         }
 
         // Wait briefly for detection (with timeout)
-        let waitResult = semaphore.wait(timeout: .now() + 0.5)
+        let waitResult = semaphore.wait(timeout: .now() + Constants.Scanner.textDetectionTimeout)
         if waitResult == .timedOut {
             AppLogger.scanner.warning("CardImageProcessor: Text orientation detection timed out")
         }

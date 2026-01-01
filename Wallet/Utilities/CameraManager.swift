@@ -12,7 +12,7 @@ class CameraManager: NSObject, ObservableObject {
     private var photoCaptureCompletion: ((UIImage?) -> Void)?
 
     private var lastDetectionTime = Date()
-    private let detectionInterval: TimeInterval = 0.1
+    private let detectionInterval: TimeInterval = Constants.Scanner.detectionInterval
 
     override init() {
         super.init()
@@ -102,13 +102,13 @@ class CameraManager: NSObject, ObservableObject {
             }
         }
 
-        // More forgiving detection settings
-        request.minimumAspectRatio = 0.3  // Allow more variety
-        request.maximumAspectRatio = 3.0  // Allow portrait cards too
-        request.minimumSize = 0.05        // Detect smaller cards (5% of frame)
-        request.minimumConfidence = 0.3   // Lower confidence threshold
+        // Detection settings from constants
+        request.minimumAspectRatio = Constants.Scanner.minimumAspectRatio
+        request.maximumAspectRatio = Constants.Scanner.maximumAspectRatio
+        request.minimumSize = Constants.Scanner.minimumSize
+        request.minimumConfidence = Constants.Scanner.minimumConfidence
         request.maximumObservations = 1
-        request.quadratureTolerance = 30  // Allow up to 30° angle deviation
+        request.quadratureTolerance = Constants.Scanner.quadratureTolerance
 
         let handler = VNImageRequestHandler(cvPixelBuffer: image, orientation: .up, options: [:])
         do {

@@ -9,6 +9,14 @@ struct FullScreenCardView: View {
     @State private var brightness: CGFloat = UIScreen.main.brightness
     @State private var dragOffset: CGFloat = 0
     @State private var showingEditSheet = false
+    @State private var showingShareSheet = false
+
+    private var imagesToShare: [UIImage] {
+        var images: [UIImage] = []
+        if let front = card.frontImage { images.append(front) }
+        if let back = card.backImage { images.append(back) }
+        return images
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -58,14 +66,14 @@ struct FullScreenCardView: View {
                 }
                 .offset(y: dragOffset)
                 .simultaneousGesture(
-                    DragGesture(minimumDistance: 20)
+                    DragGesture(minimumDistance: Constants.Gestures.swipeMinimumDistance)
                         .onChanged { value in
                             if value.translation.height > 0 {
                                 dragOffset = value.translation.height
                             }
                         }
                         .onEnded { value in
-                            if value.translation.height > 100 {
+                            if value.translation.height > Constants.Gestures.swipeDismissThreshold {
                                 AppLogger.ui.info("Swipe down to dismiss - offset: \(value.translation.height)")
                                 dismiss()
                             } else {
@@ -77,24 +85,25 @@ struct FullScreenCardView: View {
                         }
                 )
 
-                // Top bar with edit and close buttons
+                // Top bar with menu
                 VStack {
                     HStack {
-                        Button {
-                            showingEditSheet = true
-                        } label: {
-                            Image(systemName: "pencil.circle.fill")
-                                .font(.title)
-                                .foregroundStyle(.white.opacity(0.8))
-                        }
-                        .padding()
-
                         Spacer()
 
-                        Button {
-                            dismiss()
+                        Menu {
+                            Button {
+                                showingEditSheet = true
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+
+                            Button {
+                                showingShareSheet = true
+                            } label: {
+                                Label("Share", systemImage: "square.and.arrow.up")
+                            }
                         } label: {
-                            Image(systemName: "xmark.circle.fill")
+                            Image(systemName: "ellipsis.circle.fill")
                                 .font(.title)
                                 .foregroundStyle(.white.opacity(0.8))
                         }
@@ -117,5 +126,18 @@ struct FullScreenCardView: View {
         .sheet(isPresented: $showingEditSheet) {
             CardFormView(mode: .edit(card))
         }
+        .sheet(isPresented: $showingShareSheet) {
+            ShareSheet(items: imagesToShare)
+        }
     }
+}
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

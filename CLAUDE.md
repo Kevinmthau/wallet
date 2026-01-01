@@ -15,6 +15,9 @@ xcodebuild -project Wallet.xcodeproj -scheme Wallet -destination "generic/platfo
 
 # Install to connected iPhone (get device ID from: xcrun devicectl list devices)
 xcrun devicectl device install app --device "<DEVICE_ID>" "/Users/kevinthau/Library/Developer/Xcode/DerivedData/Wallet-bubmpkhzrhglkudrthpptqimyzlt/Build/Products/Debug-iphoneos/Wallet.app"
+
+# Build for simulator
+xcodebuild -project Wallet.xcodeproj -scheme Wallet -destination "platform=iOS Simulator,name=iPhone 16 Pro" build
 ```
 
 ## Architecture Overview
@@ -26,24 +29,37 @@ iOS card wallet app using SwiftUI + Core Data with CloudKit sync. Stores photos 
 - Uses `NSPersistentCloudKitContainer` for automatic iCloud sync
 - CloudKit requires all attributes to have default values or be optional
 - `Card` entity stores front/back images as binary data with external storage enabled
-- `CardStore` is the main view model using `@Observable` macro for CRUD operations
+- `CardStore` is the main view model using `@Observable` macro with generic `fetch()` helper for queries
 
 ### Views Flow
-1. `CardListView` - Apple Wallet-style stacked card UI with tap-to-expand animation
+1. `CardListView` - Apple Wallet-style stacked card UI with custom header and context menu actions
 2. `FullScreenCardView` - Full-screen card display (tap to flip, swipe down to dismiss)
-3. `EditCardView` - Card editing with scanner integration (accessed via long-press)
-4. `AddCardView` - Card creation with scanner integration
+3. `CardFormView` - Unified add/edit form using `CardFormMode` enum (`.add` or `.edit(Card)`)
+4. `CardDetailView` - Card detail view with zoom/pan gestures
 
-### Custom Scanner (`AutoCaptureScanner.swift`)
-Custom camera implementation using AVFoundation + Vision framework:
-- `VNDetectRectanglesRequest` for card detection with relaxed thresholds
+### Reusable Components (`Views/Components/`)
+- `WalletCardView` - Card display with image, gradient overlay, and metadata
+- `FlippableCardView` - Front/back flip animation
+- `CardImagePickerButton` - Image picker with scan/enhance/remove actions
+
+### Scanner System
+Split into focused components for maintainability:
+- `AutoCaptureScanner` - Main scanner view, orchestration, and image processing
+- `CameraManager` (`Utilities/`) - AVFoundation camera hardware and `VNDetectRectanglesRequest`
+- `CameraPreviewView` - UIViewRepresentable camera preview
+- `ScannerOverlay` - `CardOverlay` and `CardCorners` visual feedback
+
+Scanner features:
 - Auto-captures after card is stable for ~1 second
 - Perspective correction via `CIFilter.perspectiveCorrection()`
-- Text-based orientation detection using `VNRecognizeTextRequest` (respects portrait cards)
+- Text-based orientation detection using `VNRecognizeTextRequest`
 - Manual capture fallback button
 
 ### Image Enhancement (`ImageEnhancer.swift`)
 Core Image filters for card legibility: auto-adjust, sharpen, noise reduction, unsharp mask.
+
+### OCR (`OCRExtractor.swift`)
+Vision framework text extraction using `VNRecognizeTextRequest`. Singleton with async `extractText(from:)` method returning `OCRExtractionResult`.
 
 ### Logging (`AppLogger.swift`)
 Uses `os.Logger` with categories: `UI`, `Data`, `Scanner`. Filter in Xcode console with `subsystem:com.kevinthau.wallet`.

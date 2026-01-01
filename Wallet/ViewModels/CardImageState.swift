@@ -93,17 +93,19 @@ class CardImageState {
         guard let img = image else { return }
 
         isEnhancing = true
-        ImageEnhancer.shared.enhanceAsDocumentAsync(img) { [weak self] enhanced in
-            guard let self = self else { return }
-            switch target {
-            case .front:
-                self.frontImage = enhanced
-                if isEditMode { self.frontChanged = true }
-            case .back:
-                self.backImage = enhanced
-                if isEditMode { self.backChanged = true }
+        Task {
+            let enhanced = await ImageEnhancer.shared.enhanceAsDocumentAsync(img)
+            await MainActor.run {
+                switch target {
+                case .front:
+                    self.frontImage = enhanced
+                    if isEditMode { self.frontChanged = true }
+                case .back:
+                    self.backImage = enhanced
+                    if isEditMode { self.backChanged = true }
+                }
+                self.isEnhancing = false
             }
-            self.isEnhancing = false
         }
     }
 

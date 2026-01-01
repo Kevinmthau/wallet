@@ -15,7 +15,7 @@ struct CardDetailView: View {
     @State private var showingDeleteConfirmation = false
 
     private var cardAspectRatio: CGFloat {
-        guard let image = card.frontImage else { return 1.586 }
+        guard let image = card.frontImage else { return Constants.CardLayout.aspectRatio }
         let ratio = image.size.width / image.size.height
         AppLogger.ui.debug("Card aspect ratio: \(ratio) (w: \(image.size.width), h: \(image.size.height))")
         return ratio
@@ -44,11 +44,11 @@ struct CardDetailView: View {
                     .gesture(
                         MagnificationGesture()
                             .onChanged { value in
-                                scale = max(1, min(value, 3))
+                                scale = max(1, min(value, Constants.Gestures.maxZoomScale))
                             }
                             .onEnded { _ in
                                 withAnimation(.spring()) {
-                                    if scale < 1.2 {
+                                    if scale < Constants.Gestures.snapToNormalThreshold {
                                         scale = 1
                                         offset = .zero
                                     }
@@ -76,7 +76,7 @@ struct CardDetailView: View {
                                 offset = .zero
                                 lastOffset = .zero
                             } else {
-                                scale = 2
+                                scale = Constants.Gestures.doubleTapZoomScale
                             }
                         }
                     }

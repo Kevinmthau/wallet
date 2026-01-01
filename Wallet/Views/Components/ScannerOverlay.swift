@@ -1,5 +1,5 @@
 import SwiftUI
-import Vision
+@preconcurrency import Vision
 
 struct CardOverlay: View {
     let observation: VNRectangleObservation
