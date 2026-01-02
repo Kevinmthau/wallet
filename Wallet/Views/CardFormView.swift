@@ -128,7 +128,7 @@ struct CardFormView: View {
     private var notesSection: some View {
         Section {
             TextField("Member number, expiry date, etc.", text: $notes, axis: .vertical)
-                .lineLimit(3...6)
+                .lineLimit(1...)
                 .focused($focusedField, equals: .notes)
         } header: {
             Text("Notes")
@@ -156,11 +156,15 @@ struct CardFormView: View {
     // MARK: - Actions
 
     private func updateNotesFromOCR() {
-        guard notes.isEmpty else { return }
-
         let allTexts = imageState.collectOCRTexts()
-        if !allTexts.isEmpty {
-            notes = allTexts.joined(separator: "\n")
+        guard !allTexts.isEmpty else { return }
+
+        let newNotes = allTexts.joined(separator: "\n")
+
+        // Update notes if empty OR if notes match previous OCR output (user hasn't manually edited)
+        if notes.isEmpty || notes == imageState.lastOCRNotes {
+            notes = newNotes
+            imageState.lastOCRNotes = newNotes
         }
     }
 

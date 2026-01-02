@@ -12,6 +12,7 @@ class CardImageState {
     // OCR results
     var frontOCRResult: OCRExtractionResult?
     var backOCRResult: OCRExtractionResult?
+    var lastOCRNotes: String?
 
     // Scanner control
     var showingScanner = false
@@ -78,15 +79,21 @@ class CardImageState {
                     return
                 }
 
-                let enhanced = await ImageEnhancer.shared.enhanceAsync(image)
+                async let enhancedImage = ImageEnhancer.shared.enhanceAsync(image)
+                async let ocrResult = OCRExtractor.shared.extractText(from: image)
+
+                let enhanced = await enhancedImage
+                let extractedText = await ocrResult
 
                 await MainActor.run {
                     switch target {
                     case .front:
                         self.frontImage = enhanced
+                        self.frontOCRResult = extractedText
                         if isEditMode { self.frontChanged = true }
                     case .back:
                         self.backImage = enhanced
+                        self.backOCRResult = extractedText
                         if isEditMode { self.backChanged = true }
                     }
                     self.isEnhancing = false

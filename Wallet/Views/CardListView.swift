@@ -18,6 +18,7 @@ struct CardListView: View {
     @State private var selectedCard: Card?
     @State private var cardToEdit: Card?
     @State private var showingAddCard = false
+    @GestureState private var pullOffset: CGFloat = 0
 
     private let cardHeight = Constants.CardLayout.cardHeight
     private let cardSpacing = Constants.CardLayout.cardSpacing
@@ -128,10 +129,20 @@ struct CardListView: View {
         cardHeight + CGFloat(max(0, cards.count - 1)) * cardSpacing
     }
 
+    private func elasticOffset(_ drag: CGFloat) -> CGFloat {
+        guard drag > 0 else { return 0 }
+        return Constants.Animation.ElasticStack.maxStretch * tanh(drag * Constants.Animation.ElasticStack.resistance)
+    }
+
     private var cardStack: some View {
-        ZStack(alignment: .top) {
+        let fanMultiplier = Constants.Animation.ElasticStack.fanMultiplier
+
+        return ZStack(alignment: .top) {
             ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
                 let isFrontCard = index == cards.count - 1
+                let baseOffset = CGFloat(index) * cardSpacing
+                let elasticFanOffset = elasticOffset(pullOffset) * (1 + CGFloat(index) * fanMultiplier)
+
                 CardStackItem(
                     card: card,
                     index: index,
@@ -157,11 +168,18 @@ struct CardListView: View {
                         }
                     }
                 )
-                .offset(y: CGFloat(index) * cardSpacing)
+                .offset(y: baseOffset + elasticFanOffset)
                 .zIndex(Double(index))
             }
         }
         .frame(height: stackedHeight, alignment: .top)
+        .gesture(
+            DragGesture()
+                .updating($pullOffset) { value, state, _ in
+                    state = value.translation.height
+                }
+        )
+        .animation(.spring(response: 0.35, dampingFraction: 0.5), value: pullOffset)
     }
 }
 

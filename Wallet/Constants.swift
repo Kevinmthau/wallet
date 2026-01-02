@@ -90,6 +90,17 @@ enum Constants {
 
         /// Progress bar update animation duration
         static let progressUpdateDuration: TimeInterval = 0.1
+
+        enum ElasticStack {
+            /// Resistance factor for rubber-band effect (higher = more resistance)
+            static let resistance: CGFloat = 0.012
+
+            /// Maximum stretch distance in points
+            static let maxStretch: CGFloat = 120
+
+            /// How much extra offset each successive card gets when fanning (multiplier)
+            static let fanMultiplier: CGFloat = 0.15
+        }
     }
 
     // MARK: - Image Enhancement
