@@ -36,30 +36,45 @@ class CardImageState {
         self.backImage = backImage
     }
 
+    // MARK: - Private Helpers
+
+    private func image(for target: ScanTarget) -> UIImage? {
+        switch target {
+        case .front: return frontImage
+        case .back: return backImage
+        }
+    }
+
+    private func setImage(_ image: UIImage?, for target: ScanTarget, isEditMode: Bool) {
+        switch target {
+        case .front:
+            frontImage = image
+            if isEditMode { frontChanged = true }
+        case .back:
+            backImage = image
+            if isEditMode { backChanged = true }
+        }
+    }
+
+    private func setOCRResult(_ result: OCRExtractionResult?, for target: ScanTarget) {
+        switch target {
+        case .front: frontOCRResult = result
+        case .back: backOCRResult = result
+        }
+    }
+
     // MARK: - Scan Result Handling
 
     func handleScanResult(_ result: ScanResult, isEditMode: Bool) {
         // Store OCR result immediately, then enhance asynchronously
         let target = scannerTarget
-        switch target {
-        case .front:
-            frontOCRResult = result.extractedText
-        case .back:
-            backOCRResult = result.extractedText
-        }
+        setOCRResult(result.extractedText, for: target)
 
         isEnhancing = true
         Task {
             let enhanced = await ImageEnhancer.shared.enhanceAsync(result.image)
             await MainActor.run {
-                switch target {
-                case .front:
-                    self.frontImage = enhanced
-                    if isEditMode { self.frontChanged = true }
-                case .back:
-                    self.backImage = enhanced
-                    if isEditMode { self.backChanged = true }
-                }
+                self.setImage(enhanced, for: target, isEditMode: isEditMode)
                 self.isEnhancing = false
             }
         }
@@ -86,16 +101,8 @@ class CardImageState {
                 let extractedText = await ocrResult
 
                 await MainActor.run {
-                    switch target {
-                    case .front:
-                        self.frontImage = enhanced
-                        self.frontOCRResult = extractedText
-                        if isEditMode { self.frontChanged = true }
-                    case .back:
-                        self.backImage = enhanced
-                        self.backOCRResult = extractedText
-                        if isEditMode { self.backChanged = true }
-                    }
+                    self.setImage(enhanced, for: target, isEditMode: isEditMode)
+                    self.setOCRResult(extractedText, for: target)
                     self.isEnhancing = false
                 }
             } catch {
@@ -108,26 +115,13 @@ class CardImageState {
     // MARK: - Enhancement
 
     func enhanceImage(for target: ScanTarget, isEditMode: Bool) {
-        let image: UIImage?
-        switch target {
-        case .front: image = frontImage
-        case .back: image = backImage
-        }
-
-        guard let img = image else { return }
+        guard let img = image(for: target) else { return }
 
         isEnhancing = true
         Task {
             let enhanced = await ImageEnhancer.shared.enhanceAsDocumentAsync(img)
             await MainActor.run {
-                switch target {
-                case .front:
-                    self.frontImage = enhanced
-                    if isEditMode { self.frontChanged = true }
-                case .back:
-                    self.backImage = enhanced
-                    if isEditMode { self.backChanged = true }
-                }
+                self.setImage(enhanced, for: target, isEditMode: isEditMode)
                 self.isEnhancing = false
             }
         }
@@ -136,14 +130,7 @@ class CardImageState {
     // MARK: - Remove Image
 
     func removeImage(for target: ScanTarget, isEditMode: Bool) {
-        switch target {
-        case .front:
-            frontImage = nil
-            if isEditMode { frontChanged = true }
-        case .back:
-            backImage = nil
-            if isEditMode { backChanged = true }
-        }
+        setImage(nil, for: target, isEditMode: isEditMode)
     }
 
     // MARK: - OCR Text Collection
