@@ -74,20 +74,7 @@ class CardImageProcessor {
                     return
                 }
 
-                // Analyze text bounding boxes to determine if text is sideways
-                var horizontalTextCount = 0
-                var verticalTextCount = 0
-
-                for observation in observations.prefix(Constants.Scanner.maxTextBlocksForOrientation) {
-                    let box = observation.boundingBox
-                    if box.width > box.height {
-                        horizontalTextCount += 1
-                    } else {
-                        verticalTextCount += 1
-                    }
-                }
-
-                needsRotation = verticalTextCount > horizontalTextCount
+                needsRotation = self.shouldRotateBasedOnTextOrientation(observations)
                 hasResumed = true
 
                 if needsRotation {
@@ -143,22 +130,7 @@ class CardImageProcessor {
             guard let observations = request.results as? [VNRecognizedTextObservation],
                   !observations.isEmpty else { return }
 
-            // Analyze text bounding boxes to determine if text is sideways
-            var horizontalTextCount = 0
-            var verticalTextCount = 0
-
-            for observation in observations.prefix(Constants.Scanner.maxTextBlocksForOrientation) {
-                let box = observation.boundingBox
-                // Text blocks are wider than tall when readable horizontally
-                if box.width > box.height {
-                    horizontalTextCount += 1
-                } else {
-                    verticalTextCount += 1
-                }
-            }
-
-            // If most text appears vertical (sideways), we need to rotate
-            needsRotation = verticalTextCount > horizontalTextCount
+            needsRotation = self.shouldRotateBasedOnTextOrientation(observations)
         }
 
         request.recognitionLevel = .fast
@@ -286,6 +258,25 @@ class CardImageProcessor {
     }
 
     // MARK: - Private Helpers
+
+    /// Analyzes text observations to determine if image needs rotation for proper reading orientation
+    private func shouldRotateBasedOnTextOrientation(_ observations: [VNRecognizedTextObservation]) -> Bool {
+        var horizontalTextCount = 0
+        var verticalTextCount = 0
+
+        for observation in observations.prefix(Constants.Scanner.maxTextBlocksForOrientation) {
+            let box = observation.boundingBox
+            // Text blocks are wider than tall when readable horizontally
+            if box.width > box.height {
+                horizontalTextCount += 1
+            } else {
+                verticalTextCount += 1
+            }
+        }
+
+        // If most text appears vertical (sideways), we need to rotate
+        return verticalTextCount > horizontalTextCount
+    }
 
     /// Applies only perspective correction without orientation check
     private func applyPerspectiveCorrectionOnly(

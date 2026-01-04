@@ -43,6 +43,9 @@ enum Constants {
         /// Timeout for text orientation detection (seconds)
         static let textDetectionTimeout: TimeInterval = 0.5
 
+        /// Timeout for OCR text extraction (seconds) - longer for .accurate level
+        static let ocrTimeout: TimeInterval = 2.0
+
         /// Maximum text blocks to analyze for orientation
         static let maxTextBlocksForOrientation = 10
 

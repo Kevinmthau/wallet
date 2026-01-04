@@ -16,7 +16,10 @@ class ImageEnhancer {
 
     /// Enhances a card image for better legibility
     func enhance(_ image: UIImage) -> UIImage {
-        guard let ciImage = CIImage(image: image) else { return image }
+        guard let ciImage = CIImage(image: image) else {
+            AppLogger.ui.warning("ImageEnhancer: Failed to create CIImage for enhancement")
+            return image
+        }
 
         var enhanced = ciImage
 
@@ -34,6 +37,7 @@ class ImageEnhancer {
 
         // Convert back to UIImage
         guard let cgImage = context.createCGImage(enhanced, from: enhanced.extent) else {
+            AppLogger.ui.warning("ImageEnhancer: Failed to create CGImage from enhanced image")
             return image
         }
 
@@ -62,7 +66,10 @@ class ImageEnhancer {
 
     /// Document-style enhancement (high contrast B&W option)
     func enhanceAsDocument(_ image: UIImage, blackAndWhite: Bool = false) -> UIImage {
-        guard let ciImage = CIImage(image: image) else { return image }
+        guard let ciImage = CIImage(image: image) else {
+            AppLogger.ui.warning("ImageEnhancer: Failed to create CIImage for document enhancement")
+            return image
+        }
 
         var enhanced = ciImage
 
@@ -82,6 +89,7 @@ class ImageEnhancer {
         }
 
         guard let cgImage = context.createCGImage(enhanced, from: enhanced.extent) else {
+            AppLogger.ui.warning("ImageEnhancer: Failed to create CGImage from document-enhanced image")
             return image
         }
 
@@ -106,7 +114,11 @@ class ImageEnhancer {
         let filter = CIFilter.sharpenLuminance()
         filter.inputImage = image
         filter.sharpness = intensity
-        return filter.outputImage ?? image
+        guard let output = filter.outputImage else {
+            AppLogger.ui.warning("ImageEnhancer: Sharpen filter failed")
+            return image
+        }
+        return output
     }
 
     private func unsharpMask(_ image: CIImage) -> CIImage {
@@ -114,7 +126,11 @@ class ImageEnhancer {
         filter.inputImage = image
         filter.radius = Constants.Enhancement.unsharpMaskRadius
         filter.intensity = Constants.Enhancement.unsharpMaskIntensity
-        return filter.outputImage ?? image
+        guard let output = filter.outputImage else {
+            AppLogger.ui.warning("ImageEnhancer: Unsharp mask filter failed")
+            return image
+        }
+        return output
     }
 
     private func reduceNoise(_ image: CIImage) -> CIImage {
@@ -122,7 +138,11 @@ class ImageEnhancer {
         filter.inputImage = image
         filter.noiseLevel = Constants.Enhancement.noiseLevel
         filter.sharpness = Constants.Enhancement.noiseSharpness
-        return filter.outputImage ?? image
+        guard let output = filter.outputImage else {
+            AppLogger.ui.warning("ImageEnhancer: Noise reduction filter failed")
+            return image
+        }
+        return output
     }
 
     private func adjustContrast(_ image: CIImage, contrast: Float) -> CIImage {
@@ -131,12 +151,20 @@ class ImageEnhancer {
         filter.contrast = contrast
         filter.saturation = Constants.Enhancement.saturation
         filter.brightness = 0.0
-        return filter.outputImage ?? image
+        guard let output = filter.outputImage else {
+            AppLogger.ui.warning("ImageEnhancer: Contrast adjustment filter failed")
+            return image
+        }
+        return output
     }
 
     private func convertToGrayscale(_ image: CIImage) -> CIImage {
         let filter = CIFilter.photoEffectNoir()
         filter.inputImage = image
-        return filter.outputImage ?? image
+        guard let output = filter.outputImage else {
+            AppLogger.ui.warning("ImageEnhancer: Grayscale conversion filter failed")
+            return image
+        }
+        return output
     }
 }

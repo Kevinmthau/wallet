@@ -205,24 +205,12 @@ struct CardStackItem: View {
                 onTap()
             }
             .contextMenu {
-                Button {
-                    onFavoriteToggle()
-                } label: {
-                    Label(card.isFavorite ? "Remove Favorite" : "Add to Favorites",
-                          systemImage: card.isFavorite ? "star.slash" : "star")
-                }
-
-                Button {
-                    onLongPress()
-                } label: {
-                    Label("Edit Card", systemImage: "pencil")
-                }
-
-                Button(role: .destructive) {
-                    onDelete()
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
+                CardActionMenuContent(
+                    card: card,
+                    onEdit: onLongPress,
+                    onToggleFavorite: onFavoriteToggle,
+                    onDelete: onDelete
+                )
             }
             .shadow(
                 color: .black.opacity(0.15),

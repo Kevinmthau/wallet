@@ -11,12 +11,14 @@
 		2027E9A872089AE9BE69106D /* CardPhotoPickerModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40DC516F694F9AAEC6AB9D98 /* CardPhotoPickerModifier.swift */; };
 		2C1BB2190FFDEFF5F976AC08 /* WalletApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22347D546016DE147C289EE3 /* WalletApp.swift */; };
 		3B023DC1BEF530E78FDB20DC /* CardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CF6BBE68709C820F2BA353D /* CardStore.swift */; };
+		41218CA46CEDD3C477933AF3 /* CardFlipGestureModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25D53C5C13C4C9A6F7080E01 /* CardFlipGestureModifier.swift */; };
 		4648A3A5D3F5E2F876E8C976 /* AutoCaptureScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22A52EE835F13EAFAE213A87 /* AutoCaptureScanner.swift */; };
 		4A083C2DC1B246B1498852B2 /* OCRExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68B44C14EC06F1E56C3D941A /* OCRExtractor.swift */; };
 		5D19B39DA32AFFEB989F4A5C /* WalletCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D05F70390E060D4BA9CF5F86 /* WalletCardView.swift */; };
 		5E6D19B8CA0FC03E903C1B1B /* CardImageProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9E1F05831E04A3A3C4EC2A3 /* CardImageProcessor.swift */; };
 		5FD3907358216AF07EA707B2 /* CardImagePickerButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50300A6AB9CECE957BAE5380 /* CardImagePickerButton.swift */; };
 		642C9527EEB5C5698F773C42 /* ScannerOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 542E70E5A9DB9228F9B0830A /* ScannerOverlay.swift */; };
+		6A35D80933C3E2DE3C351D2C /* CardActionMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6727E4D906687B7789F493E5 /* CardActionMenu.swift */; };
 		6A79ED10A0110C8419C036E2 /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45C21C23390F434397E46C83 /* AppLogger.swift */; };
 		7ABA4045B1316CAACB352479 /* Persistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9314A4606DD40FB63D062AD /* Persistence.swift */; };
 		7BC46332B5B799B72CD81C30 /* ScannerOverlayModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9521967964621AA6FFAB924 /* ScannerOverlayModifier.swift */; };
@@ -31,6 +33,7 @@
 		B36A0B5D0D1F722D6DB60E2A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5535878A8999DA792296D9FF /* Assets.xcassets */; };
 		BE655780D69F31706DCFEFF6 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC3D48818093E241D9AD9D12 /* Constants.swift */; };
 		CB648D4C69CE18D3E93BFA72 /* FlippableCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1BCE25844903F13DDA2128 /* FlippableCardView.swift */; };
+		CC41C49CB51764F01EA6B1F6 /* ZoomPanGestureModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF613A352C5AC31392C4F10 /* ZoomPanGestureModifier.swift */; };
 		DB6FB543496BBBDE477943A0 /* CardImageState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 176642AC28ECBF018D825A39 /* CardImageState.swift */; };
 		F7162F8347758FADA88326A9 /* CardImagesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DA4455E1E667FB2ECB157E5 /* CardImagesSection.swift */; };
 /* End PBXBuildFile section */
@@ -41,7 +44,9 @@
 		176642AC28ECBF018D825A39 /* CardImageState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardImageState.swift; sourceTree = "<group>"; };
 		22347D546016DE147C289EE3 /* WalletApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletApp.swift; sourceTree = "<group>"; };
 		22A52EE835F13EAFAE213A87 /* AutoCaptureScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoCaptureScanner.swift; sourceTree = "<group>"; };
+		25D53C5C13C4C9A6F7080E01 /* CardFlipGestureModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardFlipGestureModifier.swift; sourceTree = "<group>"; };
 		363F2E49D010D98F78204A95 /* CardFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardFormView.swift; sourceTree = "<group>"; };
+		3CF613A352C5AC31392C4F10 /* ZoomPanGestureModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomPanGestureModifier.swift; sourceTree = "<group>"; };
 		40DC516F694F9AAEC6AB9D98 /* CardPhotoPickerModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardPhotoPickerModifier.swift; sourceTree = "<group>"; };
 		444653DD3B39947262593A62 /* CardFormToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardFormToolbar.swift; sourceTree = "<group>"; };
 		45C21C23390F434397E46C83 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
@@ -51,6 +56,7 @@
 		54AB96E420A6B19A4884EF58 /* Wallet.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Wallet.entitlements; sourceTree = "<group>"; };
 		5535878A8999DA792296D9FF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		64E555060DBBA21957883DA7 /* CardListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardListView.swift; sourceTree = "<group>"; };
+		6727E4D906687B7789F493E5 /* CardActionMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardActionMenu.swift; sourceTree = "<group>"; };
 		68B44C14EC06F1E56C3D941A /* OCRExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCRExtractor.swift; sourceTree = "<group>"; };
 		999FE9EDD8A482B03322CDB5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		9A4B7C21AE45C4C73B7E25F8 /* FullScreenCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenCardView.swift; sourceTree = "<group>"; };
@@ -98,6 +104,7 @@
 			children = (
 				22A52EE835F13EAFAE213A87 /* AutoCaptureScanner.swift */,
 				E6E9DD45B48C6C2BF1893C7D /* CameraPreviewView.swift */,
+				6727E4D906687B7789F493E5 /* CardActionMenu.swift */,
 				444653DD3B39947262593A62 /* CardFormToolbar.swift */,
 				50300A6AB9CECE957BAE5380 /* CardImagePickerButton.swift */,
 				0DA4455E1E667FB2ECB157E5 /* CardImagesSection.swift */,
@@ -108,6 +115,15 @@
 				D05F70390E060D4BA9CF5F86 /* WalletCardView.swift */,
 			);
 			path = Components;
+			sourceTree = "<group>";
+		};
+		65F288F92C80FD87CA9B484E /* Modifiers */ = {
+			isa = PBXGroup;
+			children = (
+				25D53C5C13C4C9A6F7080E01 /* CardFlipGestureModifier.swift */,
+				3CF613A352C5AC31392C4F10 /* ZoomPanGestureModifier.swift */,
+			);
+			path = Modifiers;
 			sourceTree = "<group>";
 		};
 		785B4A1F8A0F5BA0D975D756 /* Models */ = {
@@ -139,6 +155,7 @@
 				64E555060DBBA21957883DA7 /* CardListView.swift */,
 				9A4B7C21AE45C4C73B7E25F8 /* FullScreenCardView.swift */,
 				53135AD3790DA755A428D300 /* Components */,
+				65F288F92C80FD87CA9B484E /* Modifiers */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -234,7 +251,9 @@
 				98395919BEB03BD673222FCA /* CameraManager.swift in Sources */,
 				8EF79C608ED1D91CF554A8AC /* CameraPreviewView.swift in Sources */,
 				1CA575A845A155814EFCA106 /* Card.swift in Sources */,
+				6A35D80933C3E2DE3C351D2C /* CardActionMenu.swift in Sources */,
 				9EBDDED8EE67BDBD1D5C8F4A /* CardDetailView.swift in Sources */,
+				41218CA46CEDD3C477933AF3 /* CardFlipGestureModifier.swift in Sources */,
 				99F042D9710FADF40EE34075 /* CardFormToolbar.swift in Sources */,
 				83DF1E439B7C955DB49C03C9 /* CardFormView.swift in Sources */,
 				5FD3907358216AF07EA707B2 /* CardImagePickerButton.swift in Sources */,
@@ -254,6 +273,7 @@
 				7BC46332B5B799B72CD81C30 /* ScannerOverlayModifier.swift in Sources */,
 				2C1BB2190FFDEFF5F976AC08 /* WalletApp.swift in Sources */,
 				5D19B39DA32AFFEB989F4A5C /* WalletCardView.swift in Sources */,
+				CC41C49CB51764F01EA6B1F6 /* ZoomPanGestureModifier.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

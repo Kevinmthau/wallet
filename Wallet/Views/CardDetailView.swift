@@ -10,7 +10,6 @@ struct CardDetailView: View {
     @State private var showingBack = false
     @State private var scale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
-    @State private var lastOffset: CGSize = .zero
     @State private var showingEdit = false
     @State private var showingDeleteConfirmation = false
 
@@ -39,54 +38,12 @@ struct CardDetailView: View {
                     .frame(maxWidth: max(0, geometry.size.width - 32))
                     .frame(maxHeight: isPortrait ? geometry.size.height * 0.6 : nil)
                     .aspectRatio(cardAspectRatio, contentMode: .fit)
-                    .scaleEffect(scale)
-                    .offset(offset)
-                    .gesture(
-                        MagnificationGesture()
-                            .onChanged { value in
-                                scale = max(1, min(value, Constants.Gestures.maxZoomScale))
-                            }
-                            .onEnded { _ in
-                                withAnimation(.spring()) {
-                                    if scale < Constants.Gestures.snapToNormalThreshold {
-                                        scale = 1
-                                        offset = .zero
-                                    }
-                                }
-                            }
+                    .zoomPanGesture(scale: $scale, offset: $offset)
+                    .cardFlipGesture(
+                        showingBack: $showingBack,
+                        isZoomed: scale > 1,
+                        hasDualSides: card.hasBack
                     )
-                    .simultaneousGesture(
-                        DragGesture()
-                            .onChanged { value in
-                                if scale > 1 {
-                                    offset = CGSize(
-                                        width: lastOffset.width + value.translation.width,
-                                        height: lastOffset.height + value.translation.height
-                                    )
-                                }
-                            }
-                            .onEnded { _ in
-                                lastOffset = offset
-                            }
-                    )
-                    .onTapGesture(count: 2) {
-                        withAnimation(.spring()) {
-                            if scale > 1 {
-                                scale = 1
-                                offset = .zero
-                                lastOffset = .zero
-                            } else {
-                                scale = Constants.Gestures.doubleTapZoomScale
-                            }
-                        }
-                    }
-                    .onTapGesture {
-                        if card.hasBack && scale == 1 {
-                            withAnimation(.spring(duration: 0.5)) {
-                                showingBack.toggle()
-                            }
-                        }
-                    }
 
                     // Flip hint
                     if card.hasBack {
@@ -149,40 +106,17 @@ struct CardDetailView: View {
                 }
 
                 ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Button {
-                            showingEdit = true
-                        } label: {
-                            Label("Edit Card", systemImage: "pencil")
-                        }
-
-                        Button {
-                            toggleFavorite()
-                        } label: {
-                            Label(
-                                card.isFavorite ? "Remove from Favorites" : "Add to Favorites",
-                                systemImage: card.isFavorite ? "star.slash" : "star"
-                            )
-                        }
-
-                        if let notes = card.notes, !notes.isEmpty {
-                            Button {
+                    CardActionMenu(
+                        card: card,
+                        onEdit: { showingEdit = true },
+                        onToggleFavorite: toggleFavorite,
+                        onDelete: { showingDeleteConfirmation = true },
+                        onCopyNotes: {
+                            if let notes = card.notes {
                                 UIPasteboard.general.string = notes
-                            } label: {
-                                Label("Copy Notes", systemImage: "doc.on.doc")
                             }
                         }
-
-                        Divider()
-
-                        Button(role: .destructive) {
-                            showingDeleteConfirmation = true
-                        } label: {
-                            Label("Delete Card", systemImage: "trash")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
+                    )
                 }
             }
             .confirmationDialog("Delete Card", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {

@@ -3,33 +3,45 @@ import PhotosUI
 
 @Observable
 class CardImageState {
-    // Images
+
+    // MARK: - Types
+
+    enum ScanTarget {
+        case front, back
+    }
+
+    // MARK: - Image Data
+
     var frontImage: UIImage?
     var backImage: UIImage?
     var frontChanged = false
     var backChanged = false
 
-    // OCR results
+    // MARK: - OCR Results
+
     var frontOCRResult: OCRExtractionResult?
     var backOCRResult: OCRExtractionResult?
+    /// Tracks last auto-populated OCR notes to detect manual user edits
     var lastOCRNotes: String?
 
-    // Scanner control
+    // MARK: - Scanner State
+
     var showingScanner = false
     var scannerTarget: ScanTarget = .front
 
-    // Photo picker control
+    // MARK: - Photo Picker State
+
+    /// Note: Separate front/back pickers required by SwiftUI photosPicker API
     var showingFrontPicker = false
     var showingBackPicker = false
     var selectedFrontItem: PhotosPickerItem?
     var selectedBackItem: PhotosPickerItem?
 
-    // UI state
+    // MARK: - UI State
+
     var isEnhancing = false
 
-    enum ScanTarget {
-        case front, back
-    }
+    // MARK: - Initialization
 
     init(frontImage: UIImage? = nil, backImage: UIImage? = nil) {
         self.frontImage = frontImage

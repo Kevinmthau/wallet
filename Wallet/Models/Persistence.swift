@@ -90,6 +90,9 @@ struct PersistenceController {
 
         // Configure for CloudKit sync
         if let description = container.persistentStoreDescriptions.first {
+            description.cloudKitContainerOptions = NSPersistentCloudKitContainerOptions(
+                containerIdentifier: "iCloud.com.kevinthau.wallet"
+            )
             description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
             description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
         } else {
