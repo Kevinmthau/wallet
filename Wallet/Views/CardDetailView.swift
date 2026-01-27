@@ -124,7 +124,7 @@ struct CardDetailView: View {
                     AppLogger.ui.info("Deleting card: \(card.name)")
                     let cardToDelete = card
                     dismiss()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Constants.Animation.dismissActionDelay) {
                         AppLogger.data.info("Executing card deletion")
                         cardStore.delete(cardToDelete)
                     }

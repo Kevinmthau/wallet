@@ -20,9 +20,10 @@ class CardImageProcessor {
         }
 
         UIGraphicsBeginImageContextWithOptions(image.size, false, image.scale)
+        defer { UIGraphicsEndImageContext() }  // Ensure context cleanup on all exit paths
+
         image.draw(in: CGRect(origin: .zero, size: image.size))
         let normalizedImage = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
 
         return normalizedImage ?? image
     }
@@ -32,6 +33,8 @@ class CardImageProcessor {
         let rotatedSize = CGSize(width: image.size.height, height: image.size.width)
 
         UIGraphicsBeginImageContextWithOptions(rotatedSize, false, image.scale)
+        defer { UIGraphicsEndImageContext() }  // Ensure context cleanup on all exit paths
+
         guard let context = UIGraphicsGetCurrentContext() else { return image }
 
         context.translateBy(x: rotatedSize.width / 2, y: rotatedSize.height / 2)
@@ -41,7 +44,6 @@ class CardImageProcessor {
         image.draw(at: .zero)
 
         let rotatedImage = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
 
         return rotatedImage ?? image
     }
@@ -54,33 +56,38 @@ class CardImageProcessor {
         }
 
         return await withCheckedContinuation { continuation in
-            var needsRotation = false
+            let lock = NSLock()
             var hasResumed = false
 
-            let request = VNRecognizeTextRequest { request, error in
+            /// Thread-safe resume helper to prevent double-resuming continuation
+            func safeResume(with result: UIImage) {
+                lock.lock()
+                defer { lock.unlock() }
                 guard !hasResumed else { return }
+                hasResumed = true
+                continuation.resume(returning: result)
+            }
 
+            let request = VNRecognizeTextRequest { [weak self] request, error in
                 if let error = error {
                     AppLogger.scanner.error("CardImageProcessor: Text recognition error: \(error.localizedDescription)")
-                    hasResumed = true
-                    continuation.resume(returning: image)
+                    safeResume(with: image)
                     return
                 }
 
-                guard let observations = request.results as? [VNRecognizedTextObservation],
+                guard let self,
+                      let observations = request.results as? [VNRecognizedTextObservation],
                       !observations.isEmpty else {
-                    hasResumed = true
-                    continuation.resume(returning: image)
+                    safeResume(with: image)
                     return
                 }
 
-                needsRotation = self.shouldRotateBasedOnTextOrientation(observations)
-                hasResumed = true
+                let needsRotation = self.shouldRotateBasedOnTextOrientation(observations)
 
                 if needsRotation {
-                    continuation.resume(returning: self.rotateImage(image, by: .pi / 2))
+                    safeResume(with: self.rotateImage(image, by: .pi / 2))
                 } else {
-                    continuation.resume(returning: image)
+                    safeResume(with: image)
                 }
             }
 
@@ -92,70 +99,15 @@ class CardImageProcessor {
                 try handler.perform([request])
             } catch {
                 AppLogger.scanner.error("CardImageProcessor: Text orientation detection failed: \(error.localizedDescription)")
-                if !hasResumed {
-                    hasResumed = true
-                    continuation.resume(returning: image)
-                }
+                safeResume(with: image)
             }
 
-            // Handle timeout
+            // Handle timeout - safeResume is thread-safe and handles duplicate calls
             DispatchQueue.global().asyncAfter(deadline: .now() + Constants.Scanner.textDetectionTimeout) {
-                if !hasResumed {
-                    AppLogger.scanner.warning("CardImageProcessor: Text orientation detection timed out")
-                    hasResumed = true
-                    continuation.resume(returning: image)
-                }
+                AppLogger.scanner.warning("CardImageProcessor: Text orientation detection timed out")
+                safeResume(with: image)
             }
         }
-    }
-
-    /// Uses text detection to determine if image needs rotation for proper reading orientation (sync version - may block)
-    func ensureProperOrientation(_ image: UIImage) -> UIImage {
-        guard let ciImage = CIImage(image: image) else {
-            AppLogger.scanner.warning("CardImageProcessor: Failed to create CIImage for orientation check")
-            return image
-        }
-
-        var needsRotation = false
-        let semaphore = DispatchSemaphore(value: 0)
-
-        let request = VNRecognizeTextRequest { request, error in
-            defer { semaphore.signal() }
-
-            if let error = error {
-                AppLogger.scanner.error("CardImageProcessor: Text recognition error: \(error.localizedDescription)")
-                return
-            }
-
-            guard let observations = request.results as? [VNRecognizedTextObservation],
-                  !observations.isEmpty else { return }
-
-            needsRotation = self.shouldRotateBasedOnTextOrientation(observations)
-        }
-
-        request.recognitionLevel = .fast
-        request.usesLanguageCorrection = false
-
-        let handler = VNImageRequestHandler(ciImage: ciImage, options: [:])
-        do {
-            try handler.perform([request])
-        } catch {
-            AppLogger.scanner.error("CardImageProcessor: Text orientation detection failed: \(error.localizedDescription)")
-        }
-
-        // Wait briefly for detection (with timeout)
-        let waitResult = semaphore.wait(timeout: .now() + Constants.Scanner.textDetectionTimeout)
-        if waitResult == .timedOut {
-            AppLogger.scanner.warning("CardImageProcessor: Text orientation detection timed out")
-        }
-
-        // Only rotate if text detection says text is sideways
-        if needsRotation {
-            return rotateImage(image, by: .pi / 2)
-        }
-
-        // Keep original orientation - respect portrait cards
-        return image
     }
 
     // MARK: - Perspective Correction
@@ -317,30 +269,16 @@ class CardImageProcessor {
         scale: CGFloat,
         orientation: UIImage.Orientation = .up
     ) -> UIImage? {
-        let filter = CIFilter.perspectiveCorrection()
-        filter.inputImage = ciImage
-        filter.topLeft = topLeft
-        filter.topRight = topRight
-        filter.bottomLeft = bottomLeft
-        filter.bottomRight = bottomRight
-
-        guard let output = filter.outputImage else {
-            AppLogger.scanner.warning("CardImageProcessor: Perspective correction filter produced no output")
-            return nil
-        }
-
-        guard let cgImage = context.createCGImage(output, from: output.extent) else {
-            AppLogger.scanner.warning("CardImageProcessor: Failed to create CGImage from perspective correction")
-            return nil
-        }
-
-        let correctedImage = UIImage(cgImage: cgImage, scale: scale, orientation: orientation)
-
-        // For VNRectangleObservation-based correction, also check orientation
-        if orientation == .up {
-            return ensureProperOrientation(correctedImage)
-        }
-
-        return correctedImage
+        // Note: This is the synchronous version - callers should use correctPerspectiveAsync
+        // for non-blocking orientation correction
+        return applyPerspectiveCorrectionOnly(
+            ciImage: ciImage,
+            topLeft: topLeft,
+            topRight: topRight,
+            bottomLeft: bottomLeft,
+            bottomRight: bottomRight,
+            scale: scale,
+            orientation: orientation
+        )
     }
 }

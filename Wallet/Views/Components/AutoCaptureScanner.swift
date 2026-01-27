@@ -17,7 +17,7 @@ struct AutoCaptureScanner: View {
     @Environment(\.dismiss) private var dismiss
     let onCapture: (ScanResult) -> Void
 
-    @StateObject private var camera = CameraManager()
+    @State private var camera = CameraManager()
     @State private var detectedRectangle: VNRectangleObservation?
     @State private var isCapturing = false
     @State private var isProcessingOCR = false
@@ -134,6 +134,7 @@ struct AutoCaptureScanner: View {
             }
         }
         .onDisappear {
+            camera.onRectangleDetected = nil
             camera.stop()
         }
     }

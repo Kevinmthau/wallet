@@ -27,21 +27,27 @@ class OCRExtractor {
         }
 
         return await withCheckedContinuation { continuation in
+            let lock = NSLock()
             var hasResumed = false
 
-            let request = VNRecognizeTextRequest { request, error in
+            /// Thread-safe resume helper to prevent double-resuming continuation
+            func safeResume(with result: OCRExtractionResult) {
+                lock.lock()
+                defer { lock.unlock() }
                 guard !hasResumed else { return }
+                hasResumed = true
+                continuation.resume(returning: result)
+            }
 
+            let request = VNRecognizeTextRequest { request, error in
                 if let error = error {
                     AppLogger.scanner.error("OCR failed: \(error.localizedDescription)")
-                    hasResumed = true
-                    continuation.resume(returning: OCRExtractionResult(texts: []))
+                    safeResume(with: OCRExtractionResult(texts: []))
                     return
                 }
 
                 guard let observations = request.results as? [VNRecognizedTextObservation] else {
-                    hasResumed = true
-                    continuation.resume(returning: OCRExtractionResult(texts: []))
+                    safeResume(with: OCRExtractionResult(texts: []))
                     return
                 }
 
@@ -50,9 +56,7 @@ class OCRExtractor {
                 }
 
                 AppLogger.scanner.info("OCR extracted \(texts.count) text blocks")
-
-                hasResumed = true
-                continuation.resume(returning: OCRExtractionResult(texts: texts))
+                safeResume(with: OCRExtractionResult(texts: texts))
             }
 
             // Use .accurate for better recognition
@@ -65,19 +69,13 @@ class OCRExtractor {
                 try handler.perform([request])
             } catch {
                 AppLogger.scanner.error("OCR failed: \(error.localizedDescription)")
-                if !hasResumed {
-                    hasResumed = true
-                    continuation.resume(returning: OCRExtractionResult(texts: []))
-                }
+                safeResume(with: OCRExtractionResult(texts: []))
             }
 
-            // Handle timeout - 2 seconds for .accurate recognition level
+            // Handle timeout - safeResume is thread-safe and handles duplicate calls
             DispatchQueue.global().asyncAfter(deadline: .now() + Constants.Scanner.ocrTimeout) {
-                if !hasResumed {
-                    AppLogger.scanner.warning("OCRExtractor: Text extraction timed out")
-                    hasResumed = true
-                    continuation.resume(returning: OCRExtractionResult(texts: []))
-                }
+                AppLogger.scanner.warning("OCRExtractor: Text extraction timed out")
+                safeResume(with: OCRExtractionResult(texts: []))
             }
         }
     }

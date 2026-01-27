@@ -37,15 +37,36 @@ enum CardCategory: String, CaseIterable, Identifiable {
 
 @objc(Card)
 public class Card: NSManagedObject, Identifiable {
-    @NSManaged public var id: UUID
+    @NSManaged public var id: UUID?
     @NSManaged public var name: String
     @NSManaged public var categoryRaw: String
     @NSManaged public var frontImageData: Data?
     @NSManaged public var backImageData: Data?
     @NSManaged public var notes: String?
     @NSManaged public var isFavorite: Bool
-    @NSManaged public var createdAt: Date
-    @NSManaged public var lastAccessedAt: Date
+    @NSManaged public var createdAt: Date?
+    @NSManaged public var lastAccessedAt: Date?
+
+    /// Lock for thread-safe stableId access when id is nil
+    private static let stableIdLock = NSLock()
+
+    /// Stable identifier for SwiftUI - id is optional for CloudKit but always set in create()
+    /// If id is nil (e.g., from CloudKit sync edge case), generates and persists a new UUID
+    var stableId: UUID {
+        if let id = id {
+            return id
+        }
+        // Thread-safe fallback: generate UUID and persist to Core Data
+        Self.stableIdLock.lock()
+        defer { Self.stableIdLock.unlock() }
+        // Double-check after acquiring lock
+        if let id = id {
+            return id
+        }
+        let newId = UUID()
+        self.id = newId
+        return newId
+    }
 
     var category: CardCategory {
         get { CardCategory(rawValue: categoryRaw) ?? .other }

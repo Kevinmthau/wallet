@@ -86,7 +86,7 @@ struct CardFormView: View {
                 Button("Delete", role: .destructive) {
                     if let card = cardToEdit {
                         dismiss()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + Constants.Animation.dismissActionDelay) {
                             cardStore.delete(card)
                         }
                     }

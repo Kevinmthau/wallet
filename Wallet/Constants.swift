@@ -55,6 +55,9 @@ enum Constants {
         static let minimumSize: Float = 0.05
         static let minimumConfidence: Float = 0.3
         static let quadratureTolerance: Float = 30
+
+        /// Length of corner brackets in scanner overlay
+        static let overlayCornerLength: CGFloat = 30
     }
 
     // MARK: - Gestures
@@ -93,6 +96,10 @@ enum Constants {
 
         /// Progress bar update animation duration
         static let progressUpdateDuration: TimeInterval = 0.1
+
+        /// Delay after dismissing a sheet before performing destructive actions (e.g., delete)
+        /// Allows dismiss animation to complete before the underlying data changes
+        static let dismissActionDelay: TimeInterval = 0.3
 
         enum ElasticStack {
             /// Resistance factor for rubber-band effect (higher = more resistance)

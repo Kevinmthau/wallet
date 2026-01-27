@@ -1,9 +1,16 @@
 import CoreData
+import Combine
 
 struct PersistenceController {
     static let shared = PersistenceController()
 
     let container: NSPersistentCloudKitContainer
+
+    /// Publisher for remote CloudKit changes - subscribe to refresh UI when other devices sync
+    let remoteChangePublisher = PassthroughSubject<Void, Never>()
+
+    /// Stored observer token for CloudKit remote change notifications
+    private let remoteChangeObserver: NSObjectProtocol
 
     init(inMemory: Bool = false) {
         // Create the managed object model programmatically
@@ -15,11 +22,12 @@ struct PersistenceController {
         cardEntity.managedObjectClassName = "Card"
 
         // Define attributes
+        // Note: id default is set dynamically in Card.create() - not here
+        // Setting UUID() here would create ONE UUID shared by all cards (evaluated once at model init)
         let idAttribute = NSAttributeDescription()
         idAttribute.name = "id"
         idAttribute.attributeType = .UUIDAttributeType
-        idAttribute.isOptional = false
-        idAttribute.defaultValue = UUID()
+        idAttribute.isOptional = true  // CloudKit requires optional or default; we always set in create()
 
         let nameAttribute = NSAttributeDescription()
         nameAttribute.name = "name"
@@ -56,17 +64,18 @@ struct PersistenceController {
         isFavoriteAttribute.isOptional = false
         isFavoriteAttribute.defaultValue = false
 
+        // Note: createdAt default is set dynamically in Card.create() - not here
+        // Setting Date() here would create ONE Date shared by all cards (evaluated once at model init)
         let createdAtAttribute = NSAttributeDescription()
         createdAtAttribute.name = "createdAt"
         createdAtAttribute.attributeType = .dateAttributeType
-        createdAtAttribute.isOptional = false
-        createdAtAttribute.defaultValue = Date()
+        createdAtAttribute.isOptional = true  // CloudKit requires optional or default; we always set in create()
 
+        // Note: lastAccessedAt default is set dynamically in Card.create() - not here
         let lastAccessedAttribute = NSAttributeDescription()
         lastAccessedAttribute.name = "lastAccessedAt"
         lastAccessedAttribute.attributeType = .dateAttributeType
-        lastAccessedAttribute.isOptional = false
-        lastAccessedAttribute.defaultValue = Date()
+        lastAccessedAttribute.isOptional = true  // CloudKit requires optional or default; we always set in create()
 
         cardEntity.properties = [
             idAttribute,
@@ -106,7 +115,20 @@ struct PersistenceController {
         }
 
         container.viewContext.automaticallyMergesChangesFromParent = true
-        container.viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+        // Use store-trump policy for "last write wins" semantics with CloudKit
+        // Remote changes take precedence over in-memory changes during merge
+        container.viewContext.mergePolicy = NSMergeByPropertyStoreTrumpMergePolicy
+
+        // Observe remote CloudKit changes and notify subscribers
+        // Store the observer token to maintain the subscription
+        remoteChangeObserver = NotificationCenter.default.addObserver(
+            forName: .NSPersistentStoreRemoteChange,
+            object: container.persistentStoreCoordinator,
+            queue: .main
+        ) { [remoteChangePublisher] _ in
+            AppLogger.data.info("PersistenceController: Received remote CloudKit change notification")
+            remoteChangePublisher.send()
+        }
     }
 
     // Preview helper

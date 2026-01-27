@@ -9,7 +9,7 @@ struct FlippableCardView: View {
 
     var body: some View {
         ZStack {
-            // Front of card
+            // Front of card - both sides must render simultaneously for flip animation
             cardSide(image: frontImage, placeholder: "Front")
                 .opacity(showingBack ? 0 : 1)
                 .rotation3DEffect(

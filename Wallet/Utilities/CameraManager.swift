@@ -2,7 +2,7 @@ import UIKit
 import AVFoundation
 @preconcurrency import Vision
 
-class CameraManager: NSObject, ObservableObject {
+class CameraManager: NSObject {
     let session = AVCaptureSession()
     private let output = AVCapturePhotoOutput()
     private let videoOutput = AVCaptureVideoDataOutput()

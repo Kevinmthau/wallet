@@ -124,12 +124,12 @@ struct FullScreenCardView: View {
             }
         }
         .onAppear {
-            // Increase brightness for better visibility
+            // Save current brightness and increase for better card visibility
             brightness = UIScreen.main.brightness
             UIScreen.main.brightness = 1.0
         }
         .onDisappear {
-            // Restore original brightness
+            // Restore brightness to what it was before viewing the card
             UIScreen.main.brightness = brightness
         }
         .statusBarHidden()

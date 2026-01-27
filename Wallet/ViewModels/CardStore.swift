@@ -3,6 +3,7 @@ import CoreData
 import SwiftUI
 import os
 
+@MainActor
 @Observable
 class CardStore {
     private let context: NSManagedObjectContext

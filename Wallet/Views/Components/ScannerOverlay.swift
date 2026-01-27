@@ -38,7 +38,7 @@ struct CardCorners: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
 
-        let cornerLength: CGFloat = 30
+        let cornerLength = Constants.Scanner.overlayCornerLength
 
         let topLeft = CGPoint(
             x: observation.topLeft.x * size.width,
