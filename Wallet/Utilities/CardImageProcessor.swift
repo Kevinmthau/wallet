@@ -110,6 +110,51 @@ class CardImageProcessor {
         }
     }
 
+    // MARK: - Rectangle Detection
+
+    /// Detects a rectangle in a still image for accurate perspective correction
+    func detectRectangle(in image: UIImage) async -> VNRectangleObservation? {
+        guard let cgImage = image.cgImage else {
+            AppLogger.scanner.warning("CardImageProcessor: Failed to get CGImage for rectangle detection")
+            return nil
+        }
+
+        return await withCheckedContinuation { continuation in
+            var hasResumed = false
+            let lock = NSLock()
+
+            func safeResume(_ result: VNRectangleObservation?) {
+                lock.lock()
+                defer { lock.unlock() }
+                guard !hasResumed else { return }
+                hasResumed = true
+                continuation.resume(returning: result)
+            }
+
+            let request = VNDetectRectanglesRequest { request, error in
+                if let error = error {
+                    AppLogger.scanner.error("CardImageProcessor: Rectangle detection error: \(error.localizedDescription)")
+                    safeResume(nil)
+                    return
+                }
+                let result = (request.results as? [VNRectangleObservation])?.first
+                safeResume(result)
+            }
+            request.minimumAspectRatio = Constants.Scanner.minimumAspectRatio
+            request.maximumAspectRatio = Constants.Scanner.maximumAspectRatio
+            request.minimumConfidence = Constants.Scanner.minimumConfidence
+            request.maximumObservations = 1
+
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            do {
+                try handler.perform([request])
+            } catch {
+                AppLogger.scanner.error("CardImageProcessor: Rectangle detection failed: \(error.localizedDescription)")
+                safeResume(nil)
+            }
+        }
+    }
+
     // MARK: - Perspective Correction
 
     /// Corrects perspective using VNRectangleObservation from Vision framework
@@ -122,6 +167,8 @@ class CardImageProcessor {
         let imageSize = ciImage.extent.size
 
         // Convert normalized coordinates to image coordinates
+        // Vision uses bottom-left origin (like CIImage), so Y doesn't need flipping here
+        // since we're going from Vision coords to CIImage coords directly
         let topLeft = CGPoint(
             x: observation.topLeft.x * imageSize.width,
             y: observation.topLeft.y * imageSize.height
@@ -176,6 +223,9 @@ class CardImageProcessor {
 
         let imageSize = ciImage.extent.size
 
+        // Convert normalized coordinates to image coordinates
+        // Vision uses bottom-left origin (like CIImage), so Y doesn't need flipping here
+        // since we're going from Vision coords to CIImage coords directly
         let topLeft = CGPoint(
             x: observation.topLeft.x * imageSize.width,
             y: observation.topLeft.y * imageSize.height

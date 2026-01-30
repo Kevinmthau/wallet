@@ -224,16 +224,17 @@ struct AutoCaptureScanner: View {
     private func processCapture(image: UIImage, observation: VNRectangleObservation?) async -> UIImage {
         let orientedImage = CardImageProcessor.shared.fixImageOrientation(image)
 
-        if let observation = observation {
-            // Use async perspective correction (includes orientation check)
+        // Re-detect rectangle on the actual captured photo for accurate coordinates
+        // This eliminates coordinate mismatch between video frames and captured photos
+        if let freshObservation = await CardImageProcessor.shared.detectRectangle(in: orientedImage) {
             return await CardImageProcessor.shared.correctPerspectiveAsync(
                 image: orientedImage,
-                observation: observation
+                observation: freshObservation
             ) ?? orientedImage
-        } else {
-            // No rectangle detected - use async orientation check
-            return await CardImageProcessor.shared.ensureProperOrientationAsync(orientedImage)
         }
+
+        // No card detected in photo - return with orientation check
+        return await CardImageProcessor.shared.ensureProperOrientationAsync(orientedImage)
     }
 
     private func triggerFlash() {
