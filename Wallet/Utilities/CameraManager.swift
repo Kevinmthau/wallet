@@ -2,6 +2,13 @@ import UIKit
 import AVFoundation
 @preconcurrency import Vision
 
+enum CameraPermissionState {
+    case notDetermined
+    case authorized
+    case denied
+    case restricted
+}
+
 class CameraManager: NSObject {
     let session = AVCaptureSession()
     private let output = AVCapturePhotoOutput()
@@ -10,13 +17,46 @@ class CameraManager: NSObject {
 
     var onRectangleDetected: ((VNRectangleObservation?) -> Void)?
     private var photoCaptureCompletion: ((UIImage?) -> Void)?
+    private let completionLock = NSLock()
+
+    private(set) var permissionState: CameraPermissionState = .notDetermined
 
     private var lastDetectionTime = Date()
     private let detectionInterval: TimeInterval = Constants.Scanner.detectionInterval
 
     override init() {
         super.init()
-        setupSession()
+        updatePermissionState()
+    }
+
+    private func updatePermissionState() {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .notDetermined:
+            permissionState = .notDetermined
+        case .authorized:
+            permissionState = .authorized
+        case .denied:
+            permissionState = .denied
+        case .restricted:
+            permissionState = .restricted
+        @unknown default:
+            permissionState = .denied
+        }
+    }
+
+    func checkPermission() async -> CameraPermissionState {
+        updatePermissionState()
+
+        if permissionState == .notDetermined {
+            let granted = await AVCaptureDevice.requestAccess(for: .video)
+            permissionState = granted ? .authorized : .denied
+        }
+
+        if permissionState == .authorized {
+            setupSession()
+        }
+
+        return permissionState
     }
 
     private func setupSession() {
@@ -69,6 +109,10 @@ class CameraManager: NSObject {
     }
 
     func stop() {
+        completionLock.lock()
+        photoCaptureCompletion = nil
+        completionLock.unlock()
+
         if session.isRunning {
             queue.async {
                 self.session.stopRunning()
@@ -77,7 +121,9 @@ class CameraManager: NSObject {
     }
 
     func capturePhoto(completion: @escaping (UIImage?) -> Void) {
+        completionLock.lock()
         photoCaptureCompletion = completion
+        completionLock.unlock()
 
         let settings = AVCapturePhotoSettings()
         output.capturePhoto(with: settings, delegate: self)
@@ -132,6 +178,12 @@ extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
 
 extension CameraManager: AVCapturePhotoCaptureDelegate {
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        // Capture and clear completion atomically to prevent stale callbacks
+        completionLock.lock()
+        let completion = photoCaptureCompletion
+        photoCaptureCompletion = nil
+        completionLock.unlock()
+
         if let error = error {
             AppLogger.scanner.error("CameraManager: Photo capture error: \(error.localizedDescription)")
         }
@@ -140,13 +192,13 @@ extension CameraManager: AVCapturePhotoCaptureDelegate {
               let image = UIImage(data: data) else {
             AppLogger.scanner.warning("CameraManager: Failed to get image from photo capture")
             DispatchQueue.main.async {
-                self.photoCaptureCompletion?(nil)
+                completion?(nil)
             }
             return
         }
 
         DispatchQueue.main.async {
-            self.photoCaptureCompletion?(image)
+            completion?(image)
         }
     }
 }

@@ -138,7 +138,7 @@ struct CardListView: View {
         let fanMultiplier = Constants.Animation.ElasticStack.fanMultiplier
 
         return ZStack(alignment: .top) {
-            ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
+            ForEach(Array(cards.enumerated()), id: \.element.stableId) { index, card in
                 let isFrontCard = index == cards.count - 1
                 let baseOffset = CGFloat(index) * cardSpacing
                 let elasticFanOffset = elasticOffset(pullOffset) * (1 + CGFloat(index) * fanMultiplier)
@@ -159,12 +159,12 @@ struct CardListView: View {
                     },
                     onFavoriteToggle: {
                         withAnimation {
-                            cardStore.toggleFavorite(card)
+                            _ = cardStore.toggleFavorite(card)
                         }
                     },
                     onDelete: {
                         withAnimation {
-                            cardStore.delete(card)
+                            _ = cardStore.delete(card)
                         }
                     }
                 )

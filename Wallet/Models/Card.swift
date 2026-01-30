@@ -2,6 +2,21 @@ import Foundation
 import CoreData
 import SwiftUI
 
+/// Errors that can occur during card operations
+enum CardError: LocalizedError {
+    case imageCompressionFailed
+    case contextSaveFailed(underlying: Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .imageCompressionFailed:
+            return "Failed to compress card image"
+        case .contextSaveFailed(let error):
+            return "Failed to save card: \(error.localizedDescription)"
+        }
+    }
+}
+
 enum CardCategory: String, CaseIterable, Identifiable {
     case insurance = "Insurance"
     case membership = "Membership"
@@ -89,6 +104,20 @@ public class Card: NSManagedObject, Identifiable {
 }
 
 extension Card {
+    /// Compresses image to JPEG, falling back to PNG if JPEG fails
+    private static func compressImage(_ image: UIImage) throws -> Data {
+        // Try JPEG first
+        if let jpegData = image.jpegData(compressionQuality: Constants.jpegCompressionQuality) {
+            return jpegData
+        }
+        // Fallback to PNG
+        if let pngData = image.pngData() {
+            AppLogger.data.warning("Card: JPEG compression failed, using PNG fallback")
+            return pngData
+        }
+        throw CardError.imageCompressionFailed
+    }
+
     static func create(
         in context: NSManagedObjectContext,
         name: String,
@@ -96,13 +125,15 @@ extension Card {
         frontImage: UIImage,
         backImage: UIImage? = nil,
         notes: String? = nil
-    ) -> Card {
+    ) throws -> Card {
         let card = Card(context: context)
         card.id = UUID()
         card.name = name
         card.category = category
-        card.frontImageData = frontImage.jpegData(compressionQuality: Constants.jpegCompressionQuality)
-        card.backImageData = backImage?.jpegData(compressionQuality: Constants.jpegCompressionQuality)
+        card.frontImageData = try compressImage(frontImage)
+        if let backImage = backImage {
+            card.backImageData = try compressImage(backImage)
+        }
         card.notes = notes
         card.isFavorite = false
         card.createdAt = Date()

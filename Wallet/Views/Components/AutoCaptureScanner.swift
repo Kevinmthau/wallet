@@ -24,6 +24,9 @@ struct AutoCaptureScanner: View {
     @State private var captureProgress: CGFloat = 0
     @State private var showFlash = false
     @State private var stableFrameCount = 0
+    @State private var captureTask: Task<Void, Never>?
+    @State private var permissionState: CameraPermissionState = .notDetermined
+    @State private var isCheckingPermission = true
 
     private let requiredStableFrames = Constants.Scanner.requiredStableFrames
 
@@ -33,37 +36,55 @@ struct AutoCaptureScanner: View {
             CameraPreviewView(session: camera.session)
                 .ignoresSafeArea()
 
-            // Detection overlay
-            GeometryReader { geometry in
-                if let rect = detectedRectangle {
-                    CardOverlay(
-                        observation: rect,
-                        size: geometry.size,
-                        progress: captureProgress
-                    )
-                }
-            }
-
-            // Flash effect
-            if showFlash {
-                Color.white
-                    .ignoresSafeArea()
-                    .transition(.opacity)
-            }
-
-            // OCR processing indicator
-            if isProcessingOCR {
+            // Permission denied or restricted overlay
+            if permissionState == .denied || permissionState == .restricted {
+                permissionDeniedView
+            } else if isCheckingPermission {
+                // Loading state while checking permission
                 VStack(spacing: 12) {
                     ProgressView()
                         .scaleEffect(1.5)
                         .tint(.white)
-                    Text("Extracting text...")
+                    Text("Requesting camera access...")
                         .font(.subheadline)
                         .foregroundStyle(.white)
                 }
                 .padding(24)
                 .background(.black.opacity(0.7))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else {
+                // Detection overlay
+                GeometryReader { geometry in
+                    if let rect = detectedRectangle {
+                        CardOverlay(
+                            observation: rect,
+                            size: geometry.size,
+                            progress: captureProgress
+                        )
+                    }
+                }
+
+                // Flash effect
+                if showFlash {
+                    Color.white
+                        .ignoresSafeArea()
+                        .transition(.opacity)
+                }
+
+                // OCR processing indicator
+                if isProcessingOCR {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                            .tint(.white)
+                        Text("Extracting text...")
+                            .font(.subheadline)
+                            .foregroundStyle(.white)
+                    }
+                    .padding(24)
+                    .background(.black.opacity(0.7))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
             }
 
             // UI overlay
@@ -86,57 +107,108 @@ struct AutoCaptureScanner: View {
 
                 Spacer()
 
-                // Instructions and manual capture
-                VStack(spacing: 16) {
-                    VStack(spacing: 8) {
-                        if detectedRectangle != nil {
-                            if captureProgress > 0 {
-                                Text("Hold steady...")
-                                    .font(.headline)
+                // Instructions and manual capture (only show when permission granted)
+                if permissionState == .authorized && !isCheckingPermission {
+                    VStack(spacing: 16) {
+                        VStack(spacing: 8) {
+                            if detectedRectangle != nil {
+                                if captureProgress > 0 {
+                                    Text("Hold steady...")
+                                        .font(.headline)
+                                } else {
+                                    Text("Card detected")
+                                        .font(.headline)
+                                }
                             } else {
-                                Text("Card detected")
+                                Text("Position card in frame")
                                     .font(.headline)
                             }
-                        } else {
-                            Text("Position card in frame")
-                                .font(.headline)
+                            Text("Auto-captures when steady")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.8))
                         }
-                        Text("Auto-captures when steady")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.8))
-                    }
-                    .foregroundStyle(.white)
-                    .padding()
-                    .background(.black.opacity(0.6))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .foregroundStyle(.white)
+                        .padding()
+                        .background(.black.opacity(0.6))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
 
-                    // Manual capture button
-                    Button {
-                        manualCapture()
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .stroke(.white, lineWidth: 4)
-                                .frame(width: 70, height: 70)
-                            Circle()
-                                .fill(.white)
-                                .frame(width: 58, height: 58)
+                        // Manual capture button
+                        Button {
+                            manualCapture()
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .stroke(.white, lineWidth: 4)
+                                    .frame(width: 70, height: 70)
+                                Circle()
+                                    .fill(.white)
+                                    .frame(width: 58, height: 58)
+                            }
                         }
                     }
+                    .padding(.bottom, 30)
                 }
-                .padding(.bottom, 30)
             }
         }
         .onAppear {
-            camera.start()
-            camera.onRectangleDetected = { observation in
-                handleRectangleDetection(observation)
+            Task {
+                permissionState = await camera.checkPermission()
+                isCheckingPermission = false
+                if permissionState == .authorized {
+                    camera.start()
+                    camera.onRectangleDetected = { observation in
+                        handleRectangleDetection(observation)
+                    }
+                }
             }
         }
         .onDisappear {
+            captureTask?.cancel()
+            captureTask = nil
             camera.onRectangleDetected = nil
             camera.stop()
         }
+    }
+
+    private var permissionDeniedView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "camera.fill")
+                .font(.system(size: 50))
+                .foregroundStyle(.white.opacity(0.6))
+
+            Text("Camera Access Required")
+                .font(.title2)
+                .fontWeight(.semibold)
+                .foregroundStyle(.white)
+
+            Text(permissionState == .restricted
+                 ? "Camera access is restricted on this device."
+                 : "Please enable camera access in Settings to scan cards.")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.8))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+
+            if permissionState == .denied {
+                Button {
+                    if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(settingsURL)
+                    }
+                } label: {
+                    Text("Open Settings")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 12)
+                        .background(.blue)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+            }
+        }
+        .padding(32)
+        .background(.black.opacity(0.8))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding()
     }
 
     // MARK: - Detection Handling
@@ -201,18 +273,38 @@ struct AutoCaptureScanner: View {
 
         camera.capturePhoto { image in
             guard let image = image else {
+                self.isCapturing = false
                 self.dismiss()
                 return
             }
 
-            Task {
+            self.captureTask = Task {
+                guard !Task.isCancelled else {
+                    await MainActor.run { self.isCapturing = false }
+                    return
+                }
+
                 let finalImage = await self.processCapture(image: image, observation: observation)
 
-                self.isProcessingOCR = true
+                guard !Task.isCancelled else {
+                    await MainActor.run { self.isCapturing = false }
+                    return
+                }
+
+                await MainActor.run { self.isProcessingOCR = true }
                 let ocrResult = await OCRExtractor.shared.extractText(from: finalImage)
+
+                guard !Task.isCancelled else {
+                    await MainActor.run {
+                        self.isProcessingOCR = false
+                        self.isCapturing = false
+                    }
+                    return
+                }
 
                 await MainActor.run {
                     self.isProcessingOCR = false
+                    self.isCapturing = false
                     self.onCapture(ScanResult(image: finalImage, extractedText: ocrResult))
                     self.dismiss()
                 }

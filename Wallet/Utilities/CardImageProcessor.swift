@@ -152,6 +152,12 @@ class CardImageProcessor {
                 AppLogger.scanner.error("CardImageProcessor: Rectangle detection failed: \(error.localizedDescription)")
                 safeResume(nil)
             }
+
+            // Handle timeout - safeResume is thread-safe and handles duplicate calls
+            DispatchQueue.global().asyncAfter(deadline: .now() + Constants.Scanner.textDetectionTimeout) {
+                AppLogger.scanner.warning("CardImageProcessor: Rectangle detection timed out")
+                safeResume(nil)
+            }
         }
     }
 

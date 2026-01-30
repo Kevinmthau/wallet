@@ -17,6 +17,10 @@ class CardImageState {
     var frontChanged = false
     var backChanged = false
 
+    // MARK: - Task Tracking
+
+    private var currentTask: Task<Void, Never>?
+
     // MARK: - OCR Results
 
     var frontOCRResult: OCRExtractionResult?
@@ -83,8 +87,20 @@ class CardImageState {
         setOCRResult(result.extractedText, for: target)
 
         isEnhancing = true
-        Task {
+        currentTask?.cancel()
+        currentTask = Task {
+            guard !Task.isCancelled else {
+                await MainActor.run { self.isEnhancing = false }
+                return
+            }
+
             let enhanced = await ImageEnhancer.shared.enhanceAsync(result.image)
+
+            guard !Task.isCancelled else {
+                await MainActor.run { self.isEnhancing = false }
+                return
+            }
+
             await MainActor.run {
                 self.setImage(enhanced, for: target, isEditMode: isEditMode)
                 self.isEnhancing = false
@@ -98,10 +114,21 @@ class CardImageState {
         guard let item = item else { return }
 
         isEnhancing = true
-        Task {
+        currentTask?.cancel()
+        currentTask = Task {
             do {
+                guard !Task.isCancelled else {
+                    await MainActor.run { self.isEnhancing = false }
+                    return
+                }
+
                 guard let data = try await item.loadTransferable(type: Data.self),
                       let image = UIImage(data: data) else {
+                    await MainActor.run { self.isEnhancing = false }
+                    return
+                }
+
+                guard !Task.isCancelled else {
                     await MainActor.run { self.isEnhancing = false }
                     return
                 }
@@ -111,6 +138,11 @@ class CardImageState {
 
                 let enhanced = await enhancedImage
                 let extractedText = await ocrResult
+
+                guard !Task.isCancelled else {
+                    await MainActor.run { self.isEnhancing = false }
+                    return
+                }
 
                 await MainActor.run {
                     self.setImage(enhanced, for: target, isEditMode: isEditMode)
@@ -130,13 +162,32 @@ class CardImageState {
         guard let img = image(for: target) else { return }
 
         isEnhancing = true
-        Task {
+        currentTask?.cancel()
+        currentTask = Task {
+            guard !Task.isCancelled else {
+                await MainActor.run { self.isEnhancing = false }
+                return
+            }
+
             let enhanced = await ImageEnhancer.shared.enhanceAsDocumentAsync(img)
+
+            guard !Task.isCancelled else {
+                await MainActor.run { self.isEnhancing = false }
+                return
+            }
+
             await MainActor.run {
                 self.setImage(enhanced, for: target, isEditMode: isEditMode)
                 self.isEnhancing = false
             }
         }
+    }
+
+    // MARK: - Cleanup
+
+    func cancelPendingTasks() {
+        currentTask?.cancel()
+        currentTask = nil
     }
 
     // MARK: - Remove Image

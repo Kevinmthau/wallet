@@ -20,6 +20,7 @@ struct CardFormView: View {
     @State private var category: CardCategory
     @State private var notes: String
     @State private var showingDeleteConfirmation = false
+    @State private var showingErrorAlert = false
 
     @FocusState private var focusedField: FormField?
 
@@ -94,6 +95,13 @@ struct CardFormView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Are you sure you want to delete this card? This cannot be undone.")
+            }
+            .alert("Error", isPresented: $showingErrorAlert) {
+                Button("OK") {
+                    cardStore.clearError()
+                }
+            } message: {
+                Text(cardStore.lastError?.localizedDescription ?? "An unexpected error occurred.")
             }
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
@@ -171,9 +179,10 @@ struct CardFormView: View {
     private func save() {
         guard let frontImage = imageState.frontImage else { return }
 
+        let success: Bool
         switch mode {
         case .add:
-            cardStore.addCard(
+            success = cardStore.addCard(
                 name: name,
                 category: category,
                 frontImage: frontImage,
@@ -181,7 +190,7 @@ struct CardFormView: View {
                 notes: notes.isEmpty ? nil : notes
             )
         case .edit(let card):
-            cardStore.updateCard(
+            success = cardStore.updateCard(
                 card,
                 name: name,
                 category: category,
@@ -191,7 +200,12 @@ struct CardFormView: View {
                 notes: notes.isEmpty ? nil : notes
             )
         }
-        dismiss()
+
+        if success {
+            dismiss()
+        } else {
+            showingErrorAlert = true
+        }
     }
 }
 
