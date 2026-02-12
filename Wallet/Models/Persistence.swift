@@ -22,7 +22,7 @@ struct PersistenceController {
         cardEntity.managedObjectClassName = "Card"
 
         // Define attributes
-        // Note: id default is set dynamically in Card.create() - not here
+        // Note: id is set dynamically when adding cards - not here
         // Setting UUID() here would create ONE UUID shared by all cards (evaluated once at model init)
         let idAttribute = NSAttributeDescription()
         idAttribute.name = "id"
@@ -64,14 +64,14 @@ struct PersistenceController {
         isFavoriteAttribute.isOptional = false
         isFavoriteAttribute.defaultValue = false
 
-        // Note: createdAt default is set dynamically in Card.create() - not here
+        // Note: createdAt is set dynamically when adding cards - not here
         // Setting Date() here would create ONE Date shared by all cards (evaluated once at model init)
         let createdAtAttribute = NSAttributeDescription()
         createdAtAttribute.name = "createdAt"
         createdAtAttribute.attributeType = .dateAttributeType
         createdAtAttribute.isOptional = true  // CloudKit requires optional or default; we always set in create()
 
-        // Note: lastAccessedAt default is set dynamically in Card.create() - not here
+        // Note: lastAccessedAt is set dynamically when adding cards - not here
         let lastAccessedAttribute = NSAttributeDescription()
         lastAccessedAttribute.name = "lastAccessedAt"
         lastAccessedAttribute.attributeType = .dateAttributeType

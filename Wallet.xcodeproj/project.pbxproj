@@ -30,6 +30,7 @@
 		9EBDDED8EE67BDBD1D5C8F4A /* CardDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA8700A2B56FE6A7857C4B71 /* CardDetailView.swift */; };
 		A4F7ACA20BBE0FB97FED9B99 /* CardListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64E555060DBBA21957883DA7 /* CardListView.swift */; };
 		AA456C3D7562970BC2E6CA35 /* ImageEnhancer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F57D986500652E7184F2E7 /* ImageEnhancer.swift */; };
+		AC40EFA1A60EC5553D309DB8 /* CardStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0924876ACC2CF3565FA131 /* CardStoreTests.swift */; };
 		B36A0B5D0D1F722D6DB60E2A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5535878A8999DA792296D9FF /* Assets.xcassets */; };
 		BE655780D69F31706DCFEFF6 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC3D48818093E241D9AD9D12 /* Constants.swift */; };
 		CB648D4C69CE18D3E93BFA72 /* FlippableCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1BCE25844903F13DDA2128 /* FlippableCardView.swift */; };
@@ -38,7 +39,18 @@
 		F7162F8347758FADA88326A9 /* CardImagesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DA4455E1E667FB2ECB157E5 /* CardImagesSection.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		6415F8C7D03915AA849EA957 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EDE997833058D8D6B7BD7EC0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3E9AE74EDD54BAB2ED9DD8A3;
+			remoteInfo = Wallet;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		02EA035424376E198064C6C4 /* WalletTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = WalletTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0CF6BBE68709C820F2BA353D /* CardStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardStore.swift; sourceTree = "<group>"; };
 		0DA4455E1E667FB2ECB157E5 /* CardImagesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardImagesSection.swift; sourceTree = "<group>"; };
 		176642AC28ECBF018D825A39 /* CardImageState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardImageState.swift; sourceTree = "<group>"; };
@@ -64,6 +76,7 @@
 		BC3D48818093E241D9AD9D12 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		D05F70390E060D4BA9CF5F86 /* WalletCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletCardView.swift; sourceTree = "<group>"; };
 		D2F57D986500652E7184F2E7 /* ImageEnhancer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageEnhancer.swift; sourceTree = "<group>"; };
+		DB0924876ACC2CF3565FA131 /* CardStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardStoreTests.swift; sourceTree = "<group>"; };
 		E6E9DD45B48C6C2BF1893C7D /* CameraPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreviewView.swift; sourceTree = "<group>"; };
 		E9521967964621AA6FFAB924 /* ScannerOverlayModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerOverlayModifier.swift; sourceTree = "<group>"; };
 		EA8700A2B56FE6A7857C4B71 /* CardDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDetailView.swift; sourceTree = "<group>"; };
@@ -147,6 +160,14 @@
 			path = Utilities;
 			sourceTree = "<group>";
 		};
+		CD716DAA60AE2604F25E54B6 /* WalletTests */ = {
+			isa = PBXGroup;
+			children = (
+				DB0924876ACC2CF3565FA131 /* CardStoreTests.swift */,
+			);
+			path = WalletTests;
+			sourceTree = "<group>";
+		};
 		D440579A8F1873F4DE27700A /* Views */ = {
 			isa = PBXGroup;
 			children = (
@@ -164,6 +185,7 @@
 			isa = PBXGroup;
 			children = (
 				2B1DF034B796B6B819AD40A8 /* Wallet */,
+				CD716DAA60AE2604F25E54B6 /* WalletTests */,
 				F6C5876EF20585B7A996AF7D /* Products */,
 			);
 			sourceTree = "<group>";
@@ -172,6 +194,7 @@
 			isa = PBXGroup;
 			children = (
 				EF8855F2C58459BCFD012811 /* Wallet.app */,
+				02EA035424376E198064C6C4 /* WalletTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -196,6 +219,24 @@
 			productName = Wallet;
 			productReference = EF8855F2C58459BCFD012811 /* Wallet.app */;
 			productType = "com.apple.product-type.application";
+		};
+		626A34C151A4B490921664F0 /* WalletTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9142A893B6E36DF20CD69803 /* Build configuration list for PBXNativeTarget "WalletTests" */;
+			buildPhases = (
+				4E6649D3C0C197A284865C84 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CF3C3F9AFA869531D32A4F95 /* PBXTargetDependency */,
+			);
+			name = WalletTests;
+			packageProductDependencies = (
+			);
+			productName = WalletTests;
+			productReference = 02EA035424376E198064C6C4 /* WalletTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -226,6 +267,7 @@
 			projectRoot = "";
 			targets = (
 				3E9AE74EDD54BAB2ED9DD8A3 /* Wallet */,
+				626A34C151A4B490921664F0 /* WalletTests */,
 			);
 		};
 /* End PBXProject section */
@@ -242,6 +284,14 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		4E6649D3C0C197A284865C84 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AC40EFA1A60EC5553D309DB8 /* CardStoreTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		5A0E48B612B6CE229E2F1AB5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -279,7 +329,32 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		CF3C3F9AFA869531D32A4F95 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3E9AE74EDD54BAB2ED9DD8A3 /* Wallet */;
+			targetProxy = 6415F8C7D03915AA849EA957 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		0AC3892DC0737A4A835E8170 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.kevinthau.wallet.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Wallet.app/Wallet";
+			};
+			name = Debug;
+		};
 		25A92557E0FFA47B08D043AF /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -354,6 +429,23 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		45D1645E2476690EC1DCDF0F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.kevinthau.wallet.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Wallet.app/Wallet";
 			};
 			name = Release;
 		};
@@ -449,6 +541,15 @@
 			buildConfigurations = (
 				25A92557E0FFA47B08D043AF /* Debug */,
 				B9E9A08EF1A261FA73E60B4C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9142A893B6E36DF20CD69803 /* Build configuration list for PBXNativeTarget "WalletTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0AC3892DC0737A4A835E8170 /* Debug */,
+				45D1645E2476690EC1DCDF0F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

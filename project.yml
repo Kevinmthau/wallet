@@ -27,3 +27,20 @@ targets:
         DEVELOPMENT_TEAM: "3JXY2MS2Y3"
     entitlements:
       path: Wallet/Wallet.entitlements
+      properties:
+        com.apple.developer.icloud-services:
+          - CloudKit
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.com.kevinthau.wallet
+
+  WalletTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - WalletTests
+    dependencies:
+      - target: Wallet
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kevinthau.wallet.tests
+        GENERATE_INFOPLIST_FILE: YES

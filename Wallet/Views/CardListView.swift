@@ -2,8 +2,45 @@ import SwiftUI
 import CoreData
 import os
 
+private enum CardListFilter: String, CaseIterable, Identifiable {
+    case all
+    case favorites
+    case withBack
+    case category
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: return "All Cards"
+        case .favorites: return "Favorites"
+        case .withBack: return "Dual-Sided"
+        case .category: return "Category"
+        }
+    }
+}
+
+private enum CardListSort: String, CaseIterable, Identifiable {
+    case recentlyUsed
+    case nameAZ
+    case nameZA
+    case newest
+    case oldest
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .recentlyUsed: return "Recently Used"
+        case .nameAZ: return "Name A-Z"
+        case .nameZA: return "Name Z-A"
+        case .newest: return "Newest First"
+        case .oldest: return "Oldest First"
+        }
+    }
+}
+
 struct CardListView: View {
-    @Environment(\.managedObjectContext) private var viewContext
     @Environment(CardStore.self) private var cardStore
 
     @FetchRequest(
@@ -15,16 +52,38 @@ struct CardListView: View {
     )
     private var allCards: FetchedResults<Card>
 
+    @AppStorage("cardListFilter") private var filterRawValue = CardListFilter.all.rawValue
+    @AppStorage("cardListSort") private var sortRawValue = CardListSort.recentlyUsed.rawValue
+    @AppStorage("cardListCategory") private var categoryRawValue = CardCategory.membership.rawValue
+
     @State private var selectedCard: Card?
     @State private var cardToEdit: Card?
     @State private var showingAddCard = false
+    @State private var showingSearch = false
+    @State private var searchText = ""
     @GestureState private var pullOffset: CGFloat = 0
+    @FocusState private var isSearchFocused: Bool
 
     private let cardHeight = Constants.CardLayout.cardHeight
     private let cardSpacing = Constants.CardLayout.cardSpacing
 
+    private var selectedFilter: CardListFilter {
+        CardListFilter(rawValue: filterRawValue) ?? .all
+    }
+
+    private var selectedSort: CardListSort {
+        CardListSort(rawValue: sortRawValue) ?? .recentlyUsed
+    }
+
+    private var selectedCategory: CardCategory {
+        CardCategory(rawValue: categoryRawValue) ?? .membership
+    }
+
     private var cards: [Card] {
-        Array(allCards)
+        let baseCards = Array(allCards)
+        let filteredCards = applyFilter(to: baseCards)
+        let searchedCards = applySearch(to: filteredCards)
+        return applySort(to: searchedCards)
     }
 
     var body: some View {
@@ -52,25 +111,60 @@ struct CardListView: View {
                         .frame(height: 20)
 
                     Button {
-                        // Search action (placeholder)
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showingSearch.toggle()
+                        }
+                        if showingSearch {
+                            DispatchQueue.main.async {
+                                isSearchFocused = true
+                            }
+                        } else {
+                            searchText = ""
+                            isSearchFocused = false
+                        }
                     } label: {
                         Image(systemName: "magnifyingglass")
                             .font(.body)
                             .fontWeight(.medium)
                             .frame(width: 44, height: 36)
                     }
+                    .accessibilityLabel(showingSearch ? "Hide Search" : "Show Search")
 
                     Divider()
                         .frame(height: 20)
 
-                    Button {
-                        // More action (placeholder)
+                    Menu {
+                        Section("Filter") {
+                            Picker("Filter", selection: $filterRawValue) {
+                                ForEach(CardListFilter.allCases) { filter in
+                                    Text(filter.title).tag(filter.rawValue)
+                                }
+                            }
+
+                            if selectedFilter == .category {
+                                Picker("Category", selection: $categoryRawValue) {
+                                    ForEach(CardCategory.allCases) { category in
+                                        Label(category.rawValue, systemImage: category.icon)
+                                            .tag(category.rawValue)
+                                    }
+                                }
+                            }
+                        }
+
+                        Section("Sort") {
+                            Picker("Sort", selection: $sortRawValue) {
+                                ForEach(CardListSort.allCases) { sort in
+                                    Text(sort.title).tag(sort.rawValue)
+                                }
+                            }
+                        }
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.body)
                             .fontWeight(.medium)
                             .frame(width: 44, height: 36)
                     }
+                    .accessibilityLabel("Filter and Sort")
                 }
                 .foregroundStyle(.primary)
                 .background(
@@ -83,10 +177,21 @@ struct CardListView: View {
             .padding(.top, 4)
             .padding(.bottom, 12)
 
+            if showingSearch {
+                searchBar
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             // Cards immediately below
             if allCards.isEmpty {
                 Spacer()
                 emptyState
+                Spacer()
+            } else if cards.isEmpty {
+                Spacer()
+                noResultsState
                 Spacer()
             } else {
                 cardStack
@@ -101,6 +206,7 @@ struct CardListView: View {
             )
             .ignoresSafeArea()
         )
+        .animation(.easeInOut(duration: 0.2), value: showingSearch)
         .sheet(isPresented: $showingAddCard) {
             CardFormView(mode: .add)
         }
@@ -110,6 +216,33 @@ struct CardListView: View {
         .fullScreenCover(item: $selectedCard) { card in
             FullScreenCardView(card: card)
         }
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+
+            TextField("Search name or notes", text: $searchText)
+                .textInputAutocapitalization(.words)
+                .disableAutocorrection(true)
+                .focused($isSearchFocused)
+
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear Search")
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 40)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     private var emptyState: some View {
@@ -125,8 +258,74 @@ struct CardListView: View {
         }
     }
 
+    private var noResultsState: some View {
+        ContentUnavailableView {
+            Label("No Matching Cards", systemImage: "magnifyingglass")
+        } description: {
+            Text("Try adjusting search, filter, or sort settings.")
+        } actions: {
+            if !searchText.isEmpty {
+                Button("Clear Search") {
+                    searchText = ""
+                }
+            }
+            Button("Reset Filters") {
+                filterRawValue = CardListFilter.all.rawValue
+                sortRawValue = CardListSort.recentlyUsed.rawValue
+            }
+        }
+    }
+
     private var stackedHeight: CGFloat {
         cardHeight + CGFloat(max(0, cards.count - 1)) * cardSpacing
+    }
+
+    private func applySearch(to cards: [Card]) -> [Card] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return cards }
+
+        return cards.filter { card in
+            card.name.localizedCaseInsensitiveContains(query)
+                || (card.notes?.localizedCaseInsensitiveContains(query) ?? false)
+        }
+    }
+
+    private func applyFilter(to cards: [Card]) -> [Card] {
+        switch selectedFilter {
+        case .all:
+            return cards
+        case .favorites:
+            return cards.filter { $0.isFavorite }
+        case .withBack:
+            return cards.filter { $0.hasBack }
+        case .category:
+            return cards.filter { $0.category == selectedCategory }
+        }
+    }
+
+    private func applySort(to cards: [Card]) -> [Card] {
+        switch selectedSort {
+        case .recentlyUsed:
+            return cards.sorted {
+                ($0.lastAccessedAt ?? .distantPast) > ($1.lastAccessedAt ?? .distantPast)
+            }
+        case .nameAZ:
+            return cards.sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+        case .nameZA:
+            return cards.sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedDescending
+            }
+        case .newest:
+            return cards.sorted {
+                ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast)
+            }
+        case .oldest:
+            return cards.sorted {
+                ($0.createdAt ?? .distantFuture) < ($1.createdAt ?? .distantFuture)
+            }
+        }
     }
 
     private func elasticOffset(_ drag: CGFloat) -> CGFloat {

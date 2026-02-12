@@ -62,25 +62,13 @@ public class Card: NSManagedObject, Identifiable {
     @NSManaged public var createdAt: Date?
     @NSManaged public var lastAccessedAt: Date?
 
-    /// Lock for thread-safe stableId access when id is nil
-    private static let stableIdLock = NSLock()
-
-    /// Stable identifier for SwiftUI - id is optional for CloudKit but always set in create()
-    /// If id is nil (e.g., from CloudKit sync edge case), generates and persists a new UUID
-    var stableId: UUID {
+    /// Stable identifier for SwiftUI that never mutates model state during render.
+    /// Falls back to Core Data object URI string if UUID is temporarily missing.
+    var stableId: String {
         if let id = id {
-            return id
+            return id.uuidString
         }
-        // Thread-safe fallback: generate UUID and persist to Core Data
-        Self.stableIdLock.lock()
-        defer { Self.stableIdLock.unlock() }
-        // Double-check after acquiring lock
-        if let id = id {
-            return id
-        }
-        let newId = UUID()
-        self.id = newId
-        return newId
+        return objectID.uriRepresentation().absoluteString
     }
 
     var category: CardCategory {
@@ -104,43 +92,6 @@ public class Card: NSManagedObject, Identifiable {
 }
 
 extension Card {
-    /// Compresses image to JPEG, falling back to PNG if JPEG fails
-    private static func compressImage(_ image: UIImage) throws -> Data {
-        // Try JPEG first
-        if let jpegData = image.jpegData(compressionQuality: Constants.jpegCompressionQuality) {
-            return jpegData
-        }
-        // Fallback to PNG
-        if let pngData = image.pngData() {
-            AppLogger.data.warning("Card: JPEG compression failed, using PNG fallback")
-            return pngData
-        }
-        throw CardError.imageCompressionFailed
-    }
-
-    static func create(
-        in context: NSManagedObjectContext,
-        name: String,
-        category: CardCategory,
-        frontImage: UIImage,
-        backImage: UIImage? = nil,
-        notes: String? = nil
-    ) throws -> Card {
-        let card = Card(context: context)
-        card.id = UUID()
-        card.name = name
-        card.category = category
-        card.frontImageData = try compressImage(frontImage)
-        if let backImage = backImage {
-            card.backImageData = try compressImage(backImage)
-        }
-        card.notes = notes
-        card.isFavorite = false
-        card.createdAt = Date()
-        card.lastAccessedAt = Date()
-        return card
-    }
-
     func updateLastAccessed() {
         lastAccessedAt = Date()
     }

@@ -16,6 +16,7 @@ class CardStore {
 
     init(context: NSManagedObjectContext) {
         self.context = context
+        backfillMissingCardIDs()
     }
 
     // MARK: - Image Validation
@@ -125,14 +126,18 @@ class CardStore {
         notes: String? = nil
     ) -> Bool {
         do {
-            _ = try Card.create(
-                in: context,
-                name: name,
-                category: category,
-                frontImage: frontImage,
-                backImage: backImage,
-                notes: notes
-            )
+            let card = Card(context: context)
+            card.id = UUID()
+            card.name = name
+            card.category = category
+            card.frontImageData = try validateAndCompressImage(frontImage)
+            if let backImage = backImage {
+                card.backImageData = try validateAndCompressImage(backImage)
+            }
+            card.notes = notes
+            card.isFavorite = false
+            card.createdAt = Date()
+            card.lastAccessedAt = Date()
             return save()
         } catch {
             lastError = error
@@ -204,6 +209,27 @@ class CardStore {
             }
         }
         return true
+    }
+
+    /// Backfills IDs for legacy/synced records where UUID is nil.
+    /// This keeps SwiftUI identity stable without mutating during view rendering.
+    private func backfillMissingCardIDs() {
+        let request = Card.fetchRequest() as! NSFetchRequest<Card>
+        request.predicate = NSPredicate(format: "id == nil")
+
+        do {
+            let cardsMissingID = try context.fetch(request)
+            guard !cardsMissingID.isEmpty else { return }
+
+            for card in cardsMissingID {
+                card.id = UUID()
+            }
+
+            AppLogger.data.info("CardStore: Backfilling IDs for \(cardsMissingID.count) cards")
+            _ = save()
+        } catch {
+            AppLogger.data.error("CardStore.backfillMissingCardIDs failed: \(error.localizedDescription)")
+        }
     }
 
     func clearError() {
