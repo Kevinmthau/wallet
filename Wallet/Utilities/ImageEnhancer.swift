@@ -7,7 +7,7 @@ enum ImageProcessingContext {
     static let shared = CIContext()
 }
 
-class ImageEnhancer {
+final class ImageEnhancer: @unchecked Sendable {
     private let context = ImageProcessingContext.shared
 
     static let shared = ImageEnhancer()

@@ -18,6 +18,15 @@ xcrun devicectl device install app --device "<DEVICE_ID>" "/Users/kevinthau/Libr
 
 # Build for simulator
 xcodebuild -project Wallet.xcodeproj -scheme Wallet -destination "platform=iOS Simulator,name=iPhone 16 Pro" build
+
+# Run unit tests from command line
+./scripts/test.sh
+
+# Equivalent via Make
+make test
+
+# Optional: pin a destination manually if needed
+DESTINATION="platform=iOS Simulator,name=iPhone 16 Pro,OS=latest" ./scripts/test.sh
 ```
 
 ## Architecture Overview

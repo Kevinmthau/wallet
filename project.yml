@@ -44,3 +44,14 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.kevinthau.wallet.tests
         GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Wallet:
+    shared: true
+    build:
+      targets:
+        Wallet: all
+        WalletTests: [test]
+    test:
+      targets:
+        - WalletTests
