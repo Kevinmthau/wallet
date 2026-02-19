@@ -12,7 +12,7 @@ class CardStore {
     var lastError: Error?
 
     /// Maximum image dimension before resizing (2048px)
-    private static let maxImageDimension: CGFloat = 2048
+    private nonisolated static let maxImageDimension: CGFloat = 2048
 
     init(context: NSManagedObjectContext) {
         self.context = context
@@ -21,13 +21,28 @@ class CardStore {
 
     // MARK: - Image Validation
 
+    private nonisolated static func processImageInBackground(_ image: UIImage) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                autoreleasepool {
+                    do {
+                        let data = try Self.validateAndCompressImage(image)
+                        continuation.resume(returning: data)
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
+        }
+    }
+
     /// Resizes image if it exceeds max dimension, then compresses to JPEG/PNG
-    private func validateAndCompressImage(_ image: UIImage) throws -> Data {
-        let resizedImage = resizeImageIfNeeded(image, maxDimension: Self.maxImageDimension)
+    private nonisolated static func validateAndCompressImage(_ image: UIImage) throws -> Data {
+        let resizedImage = resizeImageIfNeeded(image, maxDimension: maxImageDimension)
         return try compressImage(resizedImage)
     }
 
-    private func resizeImageIfNeeded(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
+    private nonisolated static func resizeImageIfNeeded(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
         let size = image.size
         guard size.width > maxDimension || size.height > maxDimension else {
             return image
@@ -50,7 +65,7 @@ class CardStore {
         return UIGraphicsGetImageFromCurrentImageContext() ?? image
     }
 
-    private func compressImage(_ image: UIImage) throws -> Data {
+    private nonisolated static func compressImage(_ image: UIImage) throws -> Data {
         // Try JPEG first
         if let jpegData = image.jpegData(compressionQuality: Constants.jpegCompressionQuality) {
             return jpegData
@@ -124,16 +139,20 @@ class CardStore {
         frontImage: UIImage,
         backImage: UIImage? = nil,
         notes: String? = nil
-    ) -> Bool {
+    ) async -> Bool {
         do {
+            let processedFrontImage = try await Self.processImageInBackground(frontImage)
+            var processedBackImage: Data?
+            if let backImage {
+                processedBackImage = try await Self.processImageInBackground(backImage)
+            }
+
             let card = Card(context: context)
             card.id = UUID()
             card.name = name
             card.category = category
-            card.frontImageData = try validateAndCompressImage(frontImage)
-            if let backImage = backImage {
-                card.backImageData = try validateAndCompressImage(backImage)
-            }
+            card.frontImageData = processedFrontImage
+            card.backImageData = processedBackImage
             card.notes = notes
             card.isFavorite = false
             card.createdAt = Date()
@@ -174,17 +193,27 @@ class CardStore {
         backImage: UIImage? = nil,
         clearBackImage: Bool = false,
         notes: String? = nil
-    ) -> Bool {
+    ) async -> Bool {
         do {
+            var processedFrontImage: Data?
+            if let frontImage {
+                processedFrontImage = try await Self.processImageInBackground(frontImage)
+            }
+
+            var processedBackImage: Data?
+            if !clearBackImage, let backImage {
+                processedBackImage = try await Self.processImageInBackground(backImage)
+            }
+
             if let name = name { card.name = name }
             if let category = category { card.category = category }
-            if let frontImage = frontImage {
-                card.frontImageData = try validateAndCompressImage(frontImage)
+            if let processedFrontImage {
+                card.frontImageData = processedFrontImage
             }
             if clearBackImage {
                 card.backImageData = nil
-            } else if let backImage = backImage {
-                card.backImageData = try validateAndCompressImage(backImage)
+            } else if let processedBackImage {
+                card.backImageData = processedBackImage
             }
             if let notes = notes { card.notes = notes }
             return save()

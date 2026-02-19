@@ -21,6 +21,7 @@ struct CardFormView: View {
     @State private var notes: String
     @State private var showingDeleteConfirmation = false
     @State private var showingErrorAlert = false
+    @State private var isSaving = false
 
     @FocusState private var focusedField: FormField?
 
@@ -43,7 +44,7 @@ struct CardFormView: View {
     }
 
     private var canSave: Bool {
-        !name.isEmpty && imageState.frontImage != nil
+        !name.isEmpty && imageState.frontImage != nil && !isSaving
     }
 
     init(mode: CardFormMode) {
@@ -76,6 +77,7 @@ struct CardFormView: View {
                     deleteSection
                 }
             }
+            .disabled(isSaving)
             .scrollDismissesKeyboard(.interactively)
             .cardFormToolbar(
                 canSave: canSave,
@@ -177,34 +179,38 @@ struct CardFormView: View {
     }
 
     private func save() {
-        guard let frontImage = imageState.frontImage else { return }
+        guard let frontImage = imageState.frontImage, !isSaving else { return }
+        isSaving = true
 
-        let success: Bool
-        switch mode {
-        case .add:
-            success = cardStore.addCard(
-                name: name,
-                category: category,
-                frontImage: frontImage,
-                backImage: imageState.backImage,
-                notes: notes.isEmpty ? nil : notes
-            )
-        case .edit(let card):
-            success = cardStore.updateCard(
-                card,
-                name: name,
-                category: category,
-                frontImage: imageState.frontChanged ? frontImage : nil,
-                backImage: imageState.backChanged ? imageState.backImage : nil,
-                clearBackImage: imageState.backChanged && imageState.backImage == nil,
-                notes: notes.isEmpty ? nil : notes
-            )
-        }
+        Task { @MainActor in
+            let success: Bool
+            switch mode {
+            case .add:
+                success = await cardStore.addCard(
+                    name: name,
+                    category: category,
+                    frontImage: frontImage,
+                    backImage: imageState.backImage,
+                    notes: notes.isEmpty ? nil : notes
+                )
+            case .edit(let card):
+                success = await cardStore.updateCard(
+                    card,
+                    name: name,
+                    category: category,
+                    frontImage: imageState.frontChanged ? frontImage : nil,
+                    backImage: imageState.backChanged ? imageState.backImage : nil,
+                    clearBackImage: imageState.backChanged && imageState.backImage == nil,
+                    notes: notes.isEmpty ? nil : notes
+                )
+            }
 
-        if success {
-            dismiss()
-        } else {
-            showingErrorAlert = true
+            isSaving = false
+            if success {
+                dismiss()
+            } else {
+                showingErrorAlert = true
+            }
         }
     }
 }

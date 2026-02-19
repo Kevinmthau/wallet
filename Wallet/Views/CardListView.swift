@@ -43,14 +43,8 @@ private enum CardListSort: String, CaseIterable, Identifiable {
 struct CardListView: View {
     @Environment(CardStore.self) private var cardStore
 
-    @FetchRequest(
-        sortDescriptors: [
-            NSSortDescriptor(keyPath: \Card.isFavorite, ascending: false),
-            NSSortDescriptor(keyPath: \Card.lastAccessedAt, ascending: false)
-        ],
-        animation: .default
-    )
-    private var allCards: FetchedResults<Card>
+    @FetchRequest private var cardPresenceProbe: FetchedResults<Card>
+    @FetchRequest private var displayedCards: FetchedResults<Card>
 
     @AppStorage("cardListFilter") private var filterRawValue = CardListFilter.all.rawValue
     @AppStorage("cardListSort") private var sortRawValue = CardListSort.recentlyUsed.rawValue
@@ -67,6 +61,20 @@ struct CardListView: View {
     private let cardHeight = Constants.CardLayout.cardHeight
     private let cardSpacing = Constants.CardLayout.cardSpacing
 
+    init() {
+        let probeRequest = NSFetchRequest<Card>(entityName: "Card")
+        probeRequest.sortDescriptors = [NSSortDescriptor(key: "name", ascending: true)]
+        probeRequest.fetchLimit = 1
+        probeRequest.includesPropertyValues = false
+        probeRequest.returnsObjectsAsFaults = true
+        _cardPresenceProbe = FetchRequest(fetchRequest: probeRequest, animation: .default)
+
+        let request = NSFetchRequest<Card>(entityName: "Card")
+        request.fetchBatchSize = 40
+        request.sortDescriptors = Self.sortDescriptors(for: .recentlyUsed)
+        _displayedCards = FetchRequest(fetchRequest: request, animation: .default)
+    }
+
     private var selectedFilter: CardListFilter {
         CardListFilter(rawValue: filterRawValue) ?? .all
     }
@@ -80,10 +88,7 @@ struct CardListView: View {
     }
 
     private var cards: [Card] {
-        let baseCards = Array(allCards)
-        let filteredCards = applyFilter(to: baseCards)
-        let searchedCards = applySearch(to: filteredCards)
-        return applySort(to: searchedCards)
+        Array(displayedCards)
     }
 
     var body: some View {
@@ -185,7 +190,7 @@ struct CardListView: View {
             }
 
             // Cards immediately below
-            if allCards.isEmpty {
+            if cardPresenceProbe.isEmpty {
                 Spacer()
                 emptyState
                 Spacer()
@@ -215,6 +220,19 @@ struct CardListView: View {
         }
         .fullScreenCover(item: $selectedCard) { card in
             FullScreenCardView(card: card)
+        }
+        .onAppear(perform: refreshDisplayedCardsFetch)
+        .onChange(of: filterRawValue) { _, _ in
+            refreshDisplayedCardsFetch()
+        }
+        .onChange(of: sortRawValue) { _, _ in
+            refreshDisplayedCardsFetch()
+        }
+        .onChange(of: categoryRawValue) { _, _ in
+            refreshDisplayedCardsFetch()
+        }
+        .onChange(of: searchText) { _, _ in
+            refreshDisplayedCardsFetch()
         }
     }
 
@@ -280,52 +298,80 @@ struct CardListView: View {
         cardHeight + CGFloat(max(0, cards.count - 1)) * cardSpacing
     }
 
-    private func applySearch(to cards: [Card]) -> [Card] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return cards }
+    private static func sortDescriptors(for sort: CardListSort) -> [NSSortDescriptor] {
+        let nameAscending = NSSortDescriptor(
+            key: "name",
+            ascending: true,
+            selector: #selector(NSString.localizedCaseInsensitiveCompare(_:))
+        )
+        let nameDescending = NSSortDescriptor(
+            key: "name",
+            ascending: false,
+            selector: #selector(NSString.localizedCaseInsensitiveCompare(_:))
+        )
 
-        return cards.filter { card in
-            card.name.localizedCaseInsensitiveContains(query)
-                || (card.notes?.localizedCaseInsensitiveContains(query) ?? false)
+        switch sort {
+        case .recentlyUsed:
+            return [
+                NSSortDescriptor(key: "lastAccessedAt", ascending: false),
+                nameAscending
+            ]
+        case .nameAZ:
+            return [nameAscending]
+        case .nameZA:
+            return [nameDescending]
+        case .newest:
+            return [
+                NSSortDescriptor(key: "createdAt", ascending: false),
+                nameAscending
+            ]
+        case .oldest:
+            return [
+                NSSortDescriptor(key: "createdAt", ascending: true),
+                nameAscending
+            ]
         }
     }
 
-    private func applyFilter(to cards: [Card]) -> [Card] {
+    private var trimmedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func makeFetchPredicate() -> NSPredicate? {
+        var predicates: [NSPredicate] = []
+
         switch selectedFilter {
         case .all:
-            return cards
+            break
         case .favorites:
-            return cards.filter { $0.isFavorite }
+            predicates.append(NSPredicate(format: "isFavorite == YES"))
         case .withBack:
-            return cards.filter { $0.hasBack }
+            predicates.append(NSPredicate(format: "backImageData != nil"))
         case .category:
-            return cards.filter { $0.category == selectedCategory }
+            predicates.append(NSPredicate(format: "categoryRaw == %@", selectedCategory.rawValue))
+        }
+
+        if !trimmedSearchText.isEmpty {
+            predicates.append(NSPredicate(
+                format: "(name CONTAINS[cd] %@) OR (notes CONTAINS[cd] %@)",
+                trimmedSearchText,
+                trimmedSearchText
+            ))
+        }
+
+        switch predicates.count {
+        case 0:
+            return nil
+        case 1:
+            return predicates[0]
+        default:
+            return NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
         }
     }
 
-    private func applySort(to cards: [Card]) -> [Card] {
-        switch selectedSort {
-        case .recentlyUsed:
-            return cards.sorted {
-                ($0.lastAccessedAt ?? .distantPast) > ($1.lastAccessedAt ?? .distantPast)
-            }
-        case .nameAZ:
-            return cards.sorted {
-                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-            }
-        case .nameZA:
-            return cards.sorted {
-                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedDescending
-            }
-        case .newest:
-            return cards.sorted {
-                ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast)
-            }
-        case .oldest:
-            return cards.sorted {
-                ($0.createdAt ?? .distantFuture) < ($1.createdAt ?? .distantFuture)
-            }
-        }
+    private func refreshDisplayedCardsFetch() {
+        displayedCards.nsPredicate = makeFetchPredicate()
+        displayedCards.nsSortDescriptors = Self.sortDescriptors(for: selectedSort)
     }
 
     private func elasticOffset(_ drag: CGFloat) -> CGFloat {

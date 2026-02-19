@@ -1,6 +1,7 @@
 import Foundation
 import CoreData
 import SwiftUI
+import ImageIO
 
 /// Errors that can occur during card operations
 enum CardError: LocalizedError {
@@ -52,6 +53,18 @@ enum CardCategory: String, CaseIterable, Identifiable {
 
 @objc(Card)
 public class Card: NSManagedObject, Identifiable {
+    private static let fullImageCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.totalCostLimit = 96 * 1024 * 1024
+        return cache
+    }()
+
+    private static let thumbnailImageCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.totalCostLimit = 48 * 1024 * 1024
+        return cache
+    }()
+
     @NSManaged public var id: UUID?
     @NSManaged public var name: String
     @NSManaged public var categoryRaw: String
@@ -77,17 +90,96 @@ public class Card: NSManagedObject, Identifiable {
     }
 
     var frontImage: UIImage? {
-        guard let data = frontImageData else { return nil }
-        return UIImage(data: data)
+        cachedImage(
+            from: frontImageData,
+            variant: "front-full",
+            cache: Self.fullImageCache
+        ) { data in
+            UIImage(data: data)
+        }
     }
 
     var backImage: UIImage? {
-        guard let data = backImageData else { return nil }
-        return UIImage(data: data)
+        cachedImage(
+            from: backImageData,
+            variant: "back-full",
+            cache: Self.fullImageCache
+        ) { data in
+            UIImage(data: data)
+        }
+    }
+
+    var frontThumbnail: UIImage? {
+        cachedImage(
+            from: frontImageData,
+            variant: "front-thumb",
+            cache: Self.thumbnailImageCache
+        ) { data in
+            Self.makeThumbnail(
+                from: data,
+                maxPixelSize: Constants.CardLayout.listThumbnailMaxDimension
+            )
+        }
     }
 
     var hasBack: Bool {
         backImageData != nil
+    }
+
+    private func cachedImage(
+        from data: Data?,
+        variant: String,
+        cache: NSCache<NSString, UIImage>,
+        decoder: (Data) -> UIImage?
+    ) -> UIImage? {
+        guard let data else { return nil }
+        let key = cacheKey(for: data, variant: variant)
+
+        if let cached = cache.object(forKey: key) {
+            return cached
+        }
+
+        guard let image = decoder(data) else { return nil }
+        cache.setObject(image, forKey: key, cost: Self.imageCost(image))
+        return image
+    }
+
+    private func cacheKey(for data: Data, variant: String) -> NSString {
+        "\(stableId)-\(variant)-\(Self.dataFingerprint(for: data))" as NSString
+    }
+
+    private static func dataFingerprint(for data: Data) -> String {
+        let prefix = data.prefix(16).map { String(format: "%02x", $0) }.joined()
+        let suffix = data.suffix(16).map { String(format: "%02x", $0) }.joined()
+        return "\(data.count)-\(prefix)-\(suffix)"
+    }
+
+    private static func imageCost(_ image: UIImage) -> Int {
+        let pixelCount = image.size.width * image.size.height * image.scale * image.scale
+        return max(1, Int(pixelCount * 4))
+    }
+
+    private static func makeThumbnail(from data: Data, maxPixelSize: CGFloat) -> UIImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            return UIImage(data: data)
+        }
+
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(1, Int(maxPixelSize))
+        ]
+
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(
+            source,
+            0,
+            options as CFDictionary
+        ) else {
+            return UIImage(data: data)
+        }
+
+        return UIImage(cgImage: cgImage)
     }
 }
 

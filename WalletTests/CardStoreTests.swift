@@ -23,11 +23,11 @@ final class CardStoreTests: XCTestCase {
         super.tearDown()
     }
 
-    func testAddCardStoresImagesAndMetadata() throws {
+    func testAddCardStoresImagesAndMetadata() async throws {
         let front = makeImage(width: 3000, height: 1500, color: .blue)
         let back = makeImage(width: 1000, height: 600, color: .red)
 
-        let success = store.addCard(
+        let success = await store.addCard(
             name: "Gym Membership",
             category: .membership,
             frontImage: front,
@@ -52,28 +52,26 @@ final class CardStoreTests: XCTestCase {
         XCTAssertLessThanOrEqual(max(savedFrontImage.size.width, savedFrontImage.size.height), 2048.0)
     }
 
-    func testUpdateCardCanClearBackImage() throws {
+    func testUpdateCardCanClearBackImage() async throws {
         let front = makeImage(width: 600, height: 400, color: .green)
         let back = makeImage(width: 600, height: 400, color: .yellow)
 
-        XCTAssertTrue(
-            store.addCard(
-                name: "Library Card",
-                category: .loyalty,
-                frontImage: front,
-                backImage: back
-            )
+        let addSuccess = await store.addCard(
+            name: "Library Card",
+            category: .loyalty,
+            frontImage: front,
+            backImage: back
         )
+        XCTAssertTrue(addSuccess)
 
         let card = try XCTUnwrap(store.allCards.first)
         XCTAssertNotNil(card.backImageData)
 
-        XCTAssertTrue(
-            store.updateCard(
-                card,
-                clearBackImage: true
-            )
+        let updateSuccess = await store.updateCard(
+            card,
+            clearBackImage: true
         )
+        XCTAssertTrue(updateSuccess)
 
         XCTAssertNil(card.backImageData)
     }
