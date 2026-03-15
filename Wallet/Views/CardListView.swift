@@ -42,6 +42,7 @@ private enum CardListSort: String, CaseIterable, Identifiable {
 
 struct CardListView: View {
     @Environment(CardStore.self) private var cardStore
+    @Environment(SyncStatusMonitor.self) private var syncMonitor
 
     @FetchRequest private var cardPresenceProbe: FetchedResults<Card>
     @FetchRequest private var displayedCards: FetchedResults<Card>
@@ -98,6 +99,8 @@ struct CardListView: View {
                 Text("Wallet")
                     .font(.largeTitle)
                     .fontWeight(.bold)
+
+                SyncStatusIndicator(status: syncMonitor.status)
 
                 Spacer()
 
@@ -488,6 +491,8 @@ struct VisibleCardShape: Shape {
 }
 
 #Preview {
+    let persistence = PersistenceController.preview
     CardListView()
-        .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+        .environment(\.managedObjectContext, persistence.container.viewContext)
+        .environment(SyncStatusMonitor(persistenceController: persistence))
 }
