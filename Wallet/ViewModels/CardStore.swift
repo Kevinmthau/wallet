@@ -1,14 +1,12 @@
 import Foundation
 import CoreData
 import SwiftUI
-import Combine
 import os
 
 @MainActor
 @Observable
 class CardStore {
     private let context: NSManagedObjectContext
-    private var cancellables = Set<AnyCancellable>()
 
     var searchText: String = ""
     var lastError: Error?
@@ -19,17 +17,6 @@ class CardStore {
     init(context: NSManagedObjectContext) {
         self.context = context
         backfillMissingCardIDs()
-        observeRemoteChanges()
-    }
-
-    /// Subscribe to remote CloudKit changes to backfill IDs on newly synced cards.
-    private func observeRemoteChanges() {
-        PersistenceController.shared.remoteChangePublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] in
-                self?.backfillMissingCardIDs()
-            }
-            .store(in: &cancellables)
     }
 
     // MARK: - Image Validation
