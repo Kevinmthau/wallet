@@ -1,13 +1,37 @@
 import UIKit
 import CoreImage
 import CoreImage.CIFilterBuiltins
+@preconcurrency import Dispatch
 @preconcurrency import Vision
 
-class CardImageProcessor {
+private final class ImageContinuationResumer<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, Never>?
+
+    init(_ continuation: CheckedContinuation<Value, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(with value: Value) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+
+        continuation?.resume(returning: value)
+    }
+}
+
+final class CardImageProcessor: @unchecked Sendable {
     static let shared = CardImageProcessor()
 
     // Use shared CIContext from ImageEnhancer (expensive to create, should be reused)
     private let context = ImageProcessingContext.shared
+    private let queue = DispatchQueue(
+        label: "card.image.processor.queue",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
 
     private init() {}
 
@@ -29,7 +53,7 @@ class CardImageProcessor {
     }
 
     /// Rotates image by specified radians (e.g., .pi / 2 for 90 degrees)
-    func rotateImage(_ image: UIImage, by radians: CGFloat) -> UIImage {
+    private static func rotateImage(_ image: UIImage, by radians: CGFloat) -> UIImage {
         let rotatedSize = CGSize(width: image.size.height, height: image.size.width)
 
         UIGraphicsBeginImageContextWithOptions(rotatedSize, false, image.scale)
@@ -56,56 +80,44 @@ class CardImageProcessor {
         }
 
         return await withCheckedContinuation { continuation in
-            let lock = NSLock()
-            var hasResumed = false
+            let resumer = ImageContinuationResumer(continuation)
 
-            /// Thread-safe resume helper to prevent double-resuming continuation
-            func safeResume(with result: UIImage) {
-                lock.lock()
-                defer { lock.unlock() }
-                guard !hasResumed else { return }
-                hasResumed = true
-                continuation.resume(returning: result)
-            }
-
-            let request = VNRecognizeTextRequest { [weak self] request, error in
-                if let error = error {
-                    AppLogger.scanner.error("CardImageProcessor: Text recognition error: \(error.localizedDescription)")
-                    safeResume(with: image)
-                    return
-                }
-
-                guard let self,
-                      let observations = request.results as? [VNRecognizedTextObservation],
-                      !observations.isEmpty else {
-                    safeResume(with: image)
-                    return
-                }
-
-                let needsRotation = self.shouldRotateBasedOnTextOrientation(observations)
-
-                if needsRotation {
-                    safeResume(with: self.rotateImage(image, by: .pi / 2))
-                } else {
-                    safeResume(with: image)
-                }
-            }
-
-            request.recognitionLevel = .fast
-            request.usesLanguageCorrection = false
-
-            let handler = VNImageRequestHandler(ciImage: ciImage, options: [:])
-            do {
-                try handler.perform([request])
-            } catch {
-                AppLogger.scanner.error("CardImageProcessor: Text orientation detection failed: \(error.localizedDescription)")
-                safeResume(with: image)
-            }
-
-            // Handle timeout - safeResume is thread-safe and handles duplicate calls
-            DispatchQueue.global().asyncAfter(deadline: .now() + Constants.Scanner.textDetectionTimeout) {
+            queue.asyncAfter(deadline: .now() + Constants.Scanner.textDetectionTimeout) {
                 AppLogger.scanner.warning("CardImageProcessor: Text orientation detection timed out")
-                safeResume(with: image)
+                resumer.resume(with: image)
+            }
+
+            queue.async {
+                autoreleasepool {
+                    let request = VNRecognizeTextRequest { request, error in
+                        if let error {
+                            AppLogger.scanner.error("CardImageProcessor: Text recognition error: \(error.localizedDescription)")
+                            resumer.resume(with: image)
+                            return
+                        }
+
+                        guard let observations = request.results as? [VNRecognizedTextObservation],
+                              !observations.isEmpty else {
+                            resumer.resume(with: image)
+                            return
+                        }
+
+                        let needsRotation = Self.shouldRotateBasedOnTextOrientation(observations)
+                        let result = needsRotation ? Self.rotateImage(image, by: .pi / 2) : image
+                        resumer.resume(with: result)
+                    }
+
+                    request.recognitionLevel = .fast
+                    request.usesLanguageCorrection = false
+
+                    let handler = VNImageRequestHandler(ciImage: ciImage, options: [:])
+                    do {
+                        try handler.perform([request])
+                    } catch {
+                        AppLogger.scanner.error("CardImageProcessor: Text orientation detection failed: \(error.localizedDescription)")
+                        resumer.resume(with: image)
+                    }
+                }
             }
         }
     }
@@ -120,43 +132,37 @@ class CardImageProcessor {
         }
 
         return await withCheckedContinuation { continuation in
-            var hasResumed = false
-            let lock = NSLock()
+            let resumer = ImageContinuationResumer(continuation)
 
-            func safeResume(_ result: VNRectangleObservation?) {
-                lock.lock()
-                defer { lock.unlock() }
-                guard !hasResumed else { return }
-                hasResumed = true
-                continuation.resume(returning: result)
-            }
-
-            let request = VNDetectRectanglesRequest { request, error in
-                if let error = error {
-                    AppLogger.scanner.error("CardImageProcessor: Rectangle detection error: \(error.localizedDescription)")
-                    safeResume(nil)
-                    return
-                }
-                let result = (request.results as? [VNRectangleObservation])?.first
-                safeResume(result)
-            }
-            request.minimumAspectRatio = Constants.Scanner.minimumAspectRatio
-            request.maximumAspectRatio = Constants.Scanner.maximumAspectRatio
-            request.minimumConfidence = Constants.Scanner.minimumConfidence
-            request.maximumObservations = 1
-
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            do {
-                try handler.perform([request])
-            } catch {
-                AppLogger.scanner.error("CardImageProcessor: Rectangle detection failed: \(error.localizedDescription)")
-                safeResume(nil)
-            }
-
-            // Handle timeout - safeResume is thread-safe and handles duplicate calls
-            DispatchQueue.global().asyncAfter(deadline: .now() + Constants.Scanner.textDetectionTimeout) {
+            queue.asyncAfter(deadline: .now() + Constants.Scanner.textDetectionTimeout) {
                 AppLogger.scanner.warning("CardImageProcessor: Rectangle detection timed out")
-                safeResume(nil)
+                resumer.resume(with: nil)
+            }
+
+            queue.async {
+                autoreleasepool {
+                    let request = VNDetectRectanglesRequest { request, error in
+                        if let error {
+                            AppLogger.scanner.error("CardImageProcessor: Rectangle detection error: \(error.localizedDescription)")
+                            resumer.resume(with: nil)
+                            return
+                        }
+                        let result = (request.results as? [VNRectangleObservation])?.first
+                        resumer.resume(with: result)
+                    }
+                    request.minimumAspectRatio = Constants.Scanner.minimumAspectRatio
+                    request.maximumAspectRatio = Constants.Scanner.maximumAspectRatio
+                    request.minimumConfidence = Constants.Scanner.minimumConfidence
+                    request.maximumObservations = 1
+
+                    let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+                    do {
+                        try handler.perform([request])
+                    } catch {
+                        AppLogger.scanner.error("CardImageProcessor: Rectangle detection failed: \(error.localizedDescription)")
+                        resumer.resume(with: nil)
+                    }
+                }
             }
         }
     }
@@ -268,7 +274,7 @@ class CardImageProcessor {
     // MARK: - Private Helpers
 
     /// Analyzes text observations to determine if image needs rotation for proper reading orientation
-    private func shouldRotateBasedOnTextOrientation(_ observations: [VNRecognizedTextObservation]) -> Bool {
+    private static func shouldRotateBasedOnTextOrientation(_ observations: [VNRecognizedTextObservation]) -> Bool {
         var horizontalTextCount = 0
         var verticalTextCount = 0
 

@@ -11,7 +11,7 @@ struct WalletCardView: View {
                     .fill(cardGradient)
 
                 // Card image if available
-                if let image = card.frontThumbnail ?? card.frontImage {
+                if let image = card.frontThumbnail ?? card.frontDisplayImage {
                     Image(uiImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)

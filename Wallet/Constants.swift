@@ -18,6 +18,9 @@ enum Constants {
         /// Max pixel size used for list thumbnails to reduce decode/memory pressure
         static let listThumbnailMaxDimension: CGFloat = 720
 
+        /// Max pixel size used for detail/fullscreen card renders
+        static let displayImageMaxDimension: CGFloat = 2200
+
         /// Vertical spacing when a card is expanded
         static let expandedSpacing: CGFloat = 220
 
@@ -36,6 +39,12 @@ enum Constants {
 
         /// Minimum card area as ratio of frame (3% of frame)
         static let minimumCardAreaRatio: CGFloat = 0.03
+
+        /// Maximum normalized center movement between frames to count as stable
+        static let stabilityPositionTolerance: CGFloat = 0.015
+
+        /// Maximum normalized size change between frames to count as stable
+        static let stabilitySizeTolerance: CGFloat = 0.02
 
         /// Rate at which detection count decays when unstable
         static let detectionDecayRate = 2
@@ -114,6 +123,13 @@ enum Constants {
             /// How much extra offset each successive card gets when fanning (multiplier)
             static let fanMultiplier: CGFloat = 0.15
         }
+    }
+
+    // MARK: - Persistence
+
+    enum Persistence {
+        /// Delay before batching and saving access timestamp updates
+        static let accessSaveDebounceInterval: TimeInterval = 5.0
     }
 
     // MARK: - Image Enhancement

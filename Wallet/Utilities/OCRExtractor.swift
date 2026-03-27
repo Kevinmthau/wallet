@@ -1,8 +1,9 @@
 import UIKit
-import Vision
+@preconcurrency import Dispatch
+@preconcurrency import Vision
 
 /// Result from OCR extraction
-struct OCRExtractionResult {
+struct OCRExtractionResult: Sendable {
     let texts: [String]
 
     var formattedNotes: String {
@@ -14,8 +15,32 @@ struct OCRExtractionResult {
     }
 }
 
-class OCRExtractor {
+private final class OCRContinuationResumer<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, Never>?
+
+    init(_ continuation: CheckedContinuation<Value, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(with value: Value) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+
+        continuation?.resume(returning: value)
+    }
+}
+
+final class OCRExtractor: @unchecked Sendable {
     static let shared = OCRExtractor()
+
+    private let queue = DispatchQueue(
+        label: "ocr.extractor.queue",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
 
     private init() {}
 
@@ -27,55 +52,48 @@ class OCRExtractor {
         }
 
         return await withCheckedContinuation { continuation in
-            let lock = NSLock()
-            var hasResumed = false
+            let resumer = OCRContinuationResumer(continuation)
 
-            /// Thread-safe resume helper to prevent double-resuming continuation
-            func safeResume(with result: OCRExtractionResult) {
-                lock.lock()
-                defer { lock.unlock() }
-                guard !hasResumed else { return }
-                hasResumed = true
-                continuation.resume(returning: result)
-            }
-
-            let request = VNRecognizeTextRequest { request, error in
-                if let error = error {
-                    AppLogger.scanner.error("OCR failed: \(error.localizedDescription)")
-                    safeResume(with: OCRExtractionResult(texts: []))
-                    return
-                }
-
-                guard let observations = request.results as? [VNRecognizedTextObservation] else {
-                    safeResume(with: OCRExtractionResult(texts: []))
-                    return
-                }
-
-                let texts = observations.compactMap { observation -> String? in
-                    observation.topCandidates(1).first?.string
-                }
-
-                AppLogger.scanner.info("OCR extracted \(texts.count) text blocks")
-                safeResume(with: OCRExtractionResult(texts: texts))
-            }
-
-            // Use .accurate for better recognition
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = false
-            request.recognitionLanguages = ["en-US"]
-
-            let handler = VNImageRequestHandler(ciImage: ciImage, options: [:])
-            do {
-                try handler.perform([request])
-            } catch {
-                AppLogger.scanner.error("OCR failed: \(error.localizedDescription)")
-                safeResume(with: OCRExtractionResult(texts: []))
-            }
-
-            // Handle timeout - safeResume is thread-safe and handles duplicate calls
-            DispatchQueue.global().asyncAfter(deadline: .now() + Constants.Scanner.ocrTimeout) {
+            queue.asyncAfter(deadline: .now() + Constants.Scanner.ocrTimeout) {
                 AppLogger.scanner.warning("OCRExtractor: Text extraction timed out")
-                safeResume(with: OCRExtractionResult(texts: []))
+                resumer.resume(with: OCRExtractionResult(texts: []))
+            }
+
+            queue.async {
+                autoreleasepool {
+                    var extractedTexts: [String] = []
+
+                    let request = VNRecognizeTextRequest { request, error in
+                        if let error {
+                            AppLogger.scanner.error("OCR failed: \(error.localizedDescription)")
+                            resumer.resume(with: OCRExtractionResult(texts: []))
+                            return
+                        }
+
+                        guard let observations = request.results as? [VNRecognizedTextObservation] else {
+                            resumer.resume(with: OCRExtractionResult(texts: []))
+                            return
+                        }
+
+                        extractedTexts = observations.compactMap { observation in
+                            observation.topCandidates(1).first?.string
+                        }
+                    }
+
+                    request.recognitionLevel = .accurate
+                    request.usesLanguageCorrection = false
+                    request.recognitionLanguages = ["en-US"]
+
+                    let handler = VNImageRequestHandler(ciImage: ciImage, options: [:])
+                    do {
+                        try handler.perform([request])
+                        AppLogger.scanner.info("OCR extracted \(extractedTexts.count) text blocks")
+                        resumer.resume(with: OCRExtractionResult(texts: extractedTexts))
+                    } catch {
+                        AppLogger.scanner.error("OCR failed: \(error.localizedDescription)")
+                        resumer.resume(with: OCRExtractionResult(texts: []))
+                    }
+                }
             }
         }
     }

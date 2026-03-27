@@ -43,8 +43,12 @@ struct CardFormView: View {
         isEditMode ? "Edit Card" : "Add Card"
     }
 
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var canSave: Bool {
-        !name.isEmpty && imageState.frontImage != nil && !isSaving
+        !trimmedName.isEmpty && imageState.frontImage != nil && !isSaving
     }
 
     init(mode: CardFormMode) {
@@ -113,6 +117,9 @@ struct CardFormView: View {
                 isEditMode: isEditMode,
                 onScanComplete: updateNotesFromOCR
             )
+            .onDisappear {
+                imageState.cancelPendingTasks()
+            }
         }
     }
 
@@ -187,7 +194,7 @@ struct CardFormView: View {
             switch mode {
             case .add:
                 success = await cardStore.addCard(
-                    name: name,
+                    name: trimmedName,
                     category: category,
                     frontImage: frontImage,
                     backImage: imageState.backImage,
@@ -196,12 +203,13 @@ struct CardFormView: View {
             case .edit(let card):
                 success = await cardStore.updateCard(
                     card,
-                    name: name,
+                    name: trimmedName,
                     category: category,
                     frontImage: imageState.frontChanged ? frontImage : nil,
                     backImage: imageState.backChanged ? imageState.backImage : nil,
                     clearBackImage: imageState.backChanged && imageState.backImage == nil,
-                    notes: notes.isEmpty ? nil : notes
+                    notes: notes.isEmpty ? nil : notes,
+                    clearNotes: notes.isEmpty
                 )
             }
 

@@ -14,7 +14,7 @@ struct CardDetailView: View {
     @State private var showingDeleteConfirmation = false
 
     private var cardAspectRatio: CGFloat {
-        guard let image = card.frontImage else { return Constants.CardLayout.aspectRatio }
+        guard let image = card.frontDisplayImage else { return Constants.CardLayout.aspectRatio }
         let ratio = image.size.width / image.size.height
         AppLogger.ui.debug("Card aspect ratio: \(ratio) (w: \(image.size.width), h: \(image.size.height))")
         return ratio
@@ -30,8 +30,8 @@ struct CardDetailView: View {
                 VStack(spacing: isPortrait ? 16 : 24) {
                     // Card Image with flip animation
                     FlippableCardView(
-                        frontImage: card.frontImage,
-                        backImage: card.backImage,
+                        frontImage: card.frontDisplayImage,
+                        backImage: card.backDisplayImage,
                         hasBack: card.hasBack,
                         showingBack: $showingBack
                     )
@@ -147,5 +147,11 @@ struct CardDetailView: View {
 }
 
 #Preview {
-    CardDetailView(card: Card())
+    let preview = PersistenceController.preview
+    let context = preview.container.viewContext
+    let cards = (try? context.fetch(Card.makeFetchRequest())) ?? []
+    let card = cards.first ?? Card(context: context)
+    return CardDetailView(card: card)
+        .environment(\.managedObjectContext, context)
+        .environment(CardStore(context: preview.container.viewContext))
 }

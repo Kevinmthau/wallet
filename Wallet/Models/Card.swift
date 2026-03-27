@@ -53,7 +53,27 @@ enum CardCategory: String, CaseIterable, Identifiable {
 
 @objc(Card)
 public class Card: NSManagedObject, Identifiable {
+    enum Attributes {
+        static let entityName = "Card"
+        static let id = "id"
+        static let name = "name"
+        static let categoryRaw = "categoryRaw"
+        static let frontImageData = "frontImageData"
+        static let backImageData = "backImageData"
+        static let notes = "notes"
+        static let isFavorite = "isFavorite"
+        static let createdAt = "createdAt"
+        static let lastAccessedAt = "lastAccessedAt"
+        static let updatedAt = "updatedAt"
+    }
+
     private static let fullImageCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.totalCostLimit = 96 * 1024 * 1024
+        return cache
+    }()
+
+    private static let displayImageCache: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
         cache.totalCostLimit = 96 * 1024 * 1024
         return cache
@@ -74,6 +94,11 @@ public class Card: NSManagedObject, Identifiable {
     @NSManaged public var isFavorite: Bool
     @NSManaged public var createdAt: Date?
     @NSManaged public var lastAccessedAt: Date?
+    @NSManaged public var updatedAt: Date?
+
+    static func makeFetchRequest() -> NSFetchRequest<Card> {
+        NSFetchRequest<Card>(entityName: Attributes.entityName)
+    }
 
     /// Stable identifier for SwiftUI that never mutates model state during render.
     /// Falls back to Core Data object URI string if UUID is temporarily missing.
@@ -118,6 +143,32 @@ public class Card: NSManagedObject, Identifiable {
             Self.makeThumbnail(
                 from: data,
                 maxPixelSize: Constants.CardLayout.listThumbnailMaxDimension
+            )
+        }
+    }
+
+    var frontDisplayImage: UIImage? {
+        cachedImage(
+            from: frontImageData,
+            variant: "front-display",
+            cache: Self.displayImageCache
+        ) { data in
+            Self.makeThumbnail(
+                from: data,
+                maxPixelSize: Constants.CardLayout.displayImageMaxDimension
+            )
+        }
+    }
+
+    var backDisplayImage: UIImage? {
+        cachedImage(
+            from: backImageData,
+            variant: "back-display",
+            cache: Self.displayImageCache
+        ) { data in
+            Self.makeThumbnail(
+                from: data,
+                maxPixelSize: Constants.CardLayout.displayImageMaxDimension
             )
         }
     }
@@ -184,11 +235,17 @@ public class Card: NSManagedObject, Identifiable {
 }
 
 extension Card {
-    func updateLastAccessed() {
-        lastAccessedAt = Date()
+    func updateLastAccessed(at date: Date = Date()) {
+        lastAccessedAt = date
+        updatedAt = date
     }
 
-    func toggleFavorite() {
+    func touchUpdatedAt(_ date: Date = Date()) {
+        updatedAt = date
+    }
+
+    func toggleFavorite(at date: Date = Date()) {
         isFavorite.toggle()
+        updatedAt = date
     }
 }

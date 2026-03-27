@@ -77,6 +77,11 @@ struct PersistenceController {
         lastAccessedAttribute.attributeType = .dateAttributeType
         lastAccessedAttribute.isOptional = true  // CloudKit requires optional or default; we always set in create()
 
+        let updatedAtAttribute = NSAttributeDescription()
+        updatedAtAttribute.name = "updatedAt"
+        updatedAtAttribute.attributeType = .dateAttributeType
+        updatedAtAttribute.isOptional = true
+
         cardEntity.properties = [
             idAttribute,
             nameAttribute,
@@ -86,7 +91,8 @@ struct PersistenceController {
             notesAttribute,
             isFavoriteAttribute,
             createdAtAttribute,
-            lastAccessedAttribute
+            lastAccessedAttribute,
+            updatedAtAttribute
         ]
 
         model.entities = [cardEntity]
@@ -99,11 +105,15 @@ struct PersistenceController {
 
         // Configure for CloudKit sync
         if let description = container.persistentStoreDescriptions.first {
-            description.cloudKitContainerOptions = NSPersistentCloudKitContainerOptions(
-                containerIdentifier: "iCloud.com.kevinthau.wallet"
-            )
+            if !inMemory {
+                description.cloudKitContainerOptions = NSPersistentCloudKitContainerOptions(
+                    containerIdentifier: "iCloud.com.kevinthau.wallet"
+                )
+            }
             description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
             description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+            description.setOption(true as NSNumber, forKey: NSMigratePersistentStoresAutomaticallyOption)
+            description.setOption(true as NSNumber, forKey: NSInferMappingModelAutomaticallyOption)
         } else {
             AppLogger.data.error("PersistenceController: No persistent store description found - CloudKit sync may not work")
         }
@@ -114,10 +124,7 @@ struct PersistenceController {
             }
         }
 
-        container.viewContext.automaticallyMergesChangesFromParent = true
-        // Use store-trump policy for "last write wins" semantics with CloudKit
-        // Remote changes take precedence over in-memory changes during merge
-        container.viewContext.mergePolicy = NSMergeByPropertyStoreTrumpMergePolicy
+        Self.configure(context: container.viewContext)
 
         // Observe remote CloudKit changes and notify subscribers
         // Store the observer token to maintain the subscription
@@ -146,13 +153,15 @@ struct PersistenceController {
         ]
 
         for (index, name) in sampleNames.enumerated() {
+            let referenceDate = Date().addingTimeInterval(TimeInterval(-index * 3600))
             let card = Card(context: context)
             card.id = UUID()
             card.name = name
             card.category = sampleCategories[index]
             card.isFavorite = index == 0
-            card.createdAt = Date()
-            card.lastAccessedAt = Date().addingTimeInterval(TimeInterval(-index * 3600))
+            card.createdAt = referenceDate
+            card.lastAccessedAt = referenceDate
+            card.updatedAt = referenceDate
         }
 
         try? context.save()
@@ -168,5 +177,85 @@ struct PersistenceController {
                 AppLogger.data.error("PersistenceController.save failed: \(error.localizedDescription)")
             }
         }
+    }
+
+    func makeBackgroundContext() -> NSManagedObjectContext {
+        let context = container.newBackgroundContext()
+        Self.configure(context: context)
+        return context
+    }
+
+    private static func configure(context: NSManagedObjectContext) {
+        context.automaticallyMergesChangesFromParent = true
+        context.mergePolicy = CardTimestampMergePolicy()
+    }
+}
+
+final class CardTimestampMergePolicy: NSMergePolicy {
+    private let objectTrumpPolicy = NSMergePolicy(merge: .mergeByPropertyObjectTrumpMergePolicyType)
+    private let storeTrumpPolicy = NSMergePolicy(merge: .mergeByPropertyStoreTrumpMergePolicyType)
+
+    init(localTimestampKey: String = Card.Attributes.updatedAt) {
+        self.localTimestampKey = localTimestampKey
+        super.init(merge: .errorMergePolicyType)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func resolve(mergeConflicts list: [Any]) throws {
+        var objectTrumpConflicts: [Any] = []
+        var storeTrumpConflicts: [Any] = []
+
+        for item in list {
+            guard let conflict = item as? NSMergeConflict else {
+                objectTrumpConflicts.append(item)
+                continue
+            }
+
+            switch winner(for: conflict) {
+            case .object:
+                objectTrumpConflicts.append(conflict)
+            case .store:
+                storeTrumpConflicts.append(conflict)
+            }
+        }
+
+        if !storeTrumpConflicts.isEmpty {
+            try storeTrumpPolicy.resolve(mergeConflicts: storeTrumpConflicts)
+        }
+
+        if !objectTrumpConflicts.isEmpty {
+            try objectTrumpPolicy.resolve(mergeConflicts: objectTrumpConflicts)
+        }
+    }
+
+    private enum ConflictWinner {
+        case object
+        case store
+    }
+
+    private let localTimestampKey: String
+
+    private func winner(for conflict: NSMergeConflict) -> ConflictWinner {
+        let objectTimestamp = timestamp(in: conflict.objectSnapshot)
+        let storeTimestamp = timestamp(in: conflict.persistedSnapshot)
+
+        switch (objectTimestamp, storeTimestamp) {
+        case let (objectTimestamp?, storeTimestamp?):
+            return objectTimestamp >= storeTimestamp ? .object : .store
+        case (.some, nil):
+            return .object
+        case (nil, .some):
+            return .store
+        case (nil, nil):
+            return .object
+        }
+    }
+
+    private func timestamp(in snapshot: [String: Any]?) -> Date? {
+        snapshot?[localTimestampKey] as? Date
     }
 }

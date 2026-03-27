@@ -32,8 +32,8 @@ struct FullScreenCardView: View {
                 VStack(spacing: 0) {
                     // Card display area
                     FlippableCardView(
-                        frontImage: card.frontImage,
-                        backImage: card.backImage,
+                        frontImage: card.frontDisplayImage,
+                        backImage: card.backDisplayImage,
                         hasBack: card.hasBack,
                         showingBack: $showingBack,
                         showPlaceholders: false

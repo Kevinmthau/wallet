@@ -8,15 +8,17 @@ import os
 class CardStore {
     private let context: NSManagedObjectContext
 
-    var searchText: String = ""
     var lastError: Error?
 
     /// Maximum image dimension before resizing (2048px)
     private nonisolated static let maxImageDimension: CGFloat = 2048
 
+    private var pendingAccessUpdates: [NSManagedObjectID: Date] = [:]
+    private var pendingAccessSaveTask: Task<Void, Never>?
+
     init(context: NSManagedObjectContext) {
         self.context = context
-        backfillMissingCardIDs()
+        backfillLegacyMetadata()
     }
 
     // MARK: - Image Validation
@@ -66,68 +68,16 @@ class CardStore {
     }
 
     private nonisolated static func compressImage(_ image: UIImage) throws -> Data {
-        // Try JPEG first
         if let jpegData = image.jpegData(compressionQuality: Constants.jpegCompressionQuality) {
             return jpegData
         }
-        // Fallback to PNG
+
         if let pngData = image.pngData() {
             AppLogger.data.warning("CardStore: JPEG compression failed, using PNG fallback")
             return pngData
         }
+
         throw CardError.imageCompressionFailed
-    }
-
-    // MARK: - Fetch Requests
-
-    private func fetch(
-        predicate: NSPredicate? = nil,
-        sortDescriptors: [NSSortDescriptor] = [NSSortDescriptor(keyPath: \Card.name, ascending: true)],
-        fetchLimit: Int? = nil
-    ) -> [Card] {
-        let request = Card.fetchRequest() as! NSFetchRequest<Card>
-        request.predicate = predicate
-        request.sortDescriptors = sortDescriptors
-        if let limit = fetchLimit {
-            request.fetchLimit = limit
-        }
-        do {
-            return try context.fetch(request)
-        } catch {
-            AppLogger.data.error("CardStore.fetch failed: \(error.localizedDescription)")
-            return []
-        }
-    }
-
-    var favoriteCards: [Card] {
-        fetch(predicate: NSPredicate(format: "isFavorite == YES"))
-    }
-
-    var recentCards: [Card] {
-        fetch(
-            sortDescriptors: [NSSortDescriptor(keyPath: \Card.lastAccessedAt, ascending: false)],
-            fetchLimit: 5
-        )
-    }
-
-    var allCards: [Card] {
-        fetch()
-    }
-
-    func cards(for category: CardCategory) -> [Card] {
-        fetch(predicate: NSPredicate(format: "categoryRaw == %@", category.rawValue))
-    }
-
-    func filteredCards(searchText: String) -> [Card] {
-        guard !searchText.isEmpty else { return allCards }
-        return fetch(predicate: NSPredicate(format: "name CONTAINS[cd] %@", searchText))
-    }
-
-    var cardsByCategory: [(category: CardCategory, cards: [Card])] {
-        CardCategory.allCases.compactMap { category in
-            let categoryCards = cards(for: category)
-            return categoryCards.isEmpty ? nil : (category, categoryCards)
-        }
     }
 
     // MARK: - Actions
@@ -140,23 +90,27 @@ class CardStore {
         backImage: UIImage? = nil,
         notes: String? = nil
     ) async -> Bool {
-        do {
-            let processedFrontImage = try await Self.processImageInBackground(frontImage)
-            var processedBackImage: Data?
-            if let backImage {
-                processedBackImage = try await Self.processImageInBackground(backImage)
-            }
+        prepareForImmediateSave()
 
+        do {
+            async let processedFrontImage = Self.processImageInBackground(frontImage)
+            async let processedBackImage: Data? = {
+                guard let backImage else { return nil }
+                return try await Self.processImageInBackground(backImage)
+            }()
+
+            let mutationDate = Date()
             let card = Card(context: context)
             card.id = UUID()
             card.name = name
             card.category = category
-            card.frontImageData = processedFrontImage
-            card.backImageData = processedBackImage
+            card.frontImageData = try await processedFrontImage
+            card.backImageData = try await processedBackImage
             card.notes = notes
             card.isFavorite = false
-            card.createdAt = Date()
-            card.lastAccessedAt = Date()
+            card.createdAt = mutationDate
+            card.lastAccessedAt = mutationDate
+            card.updatedAt = mutationDate
             return save()
         } catch {
             lastError = error
@@ -167,6 +121,7 @@ class CardStore {
 
     @discardableResult
     func delete(_ card: Card) -> Bool {
+        prepareForImmediateSave()
         AppLogger.data.info("CardStore.delete: \(card.name)")
         context.delete(card)
         return save()
@@ -174,14 +129,14 @@ class CardStore {
 
     @discardableResult
     func toggleFavorite(_ card: Card) -> Bool {
+        prepareForImmediateSave()
         card.toggleFavorite()
         return save()
     }
 
-    @discardableResult
-    func markAccessed(_ card: Card) -> Bool {
-        card.updateLastAccessed()
-        return save()
+    func markAccessed(_ card: Card) {
+        pendingAccessUpdates[card.objectID] = Date()
+        scheduleAccessSave()
     }
 
     @discardableResult
@@ -192,30 +147,45 @@ class CardStore {
         frontImage: UIImage? = nil,
         backImage: UIImage? = nil,
         clearBackImage: Bool = false,
-        notes: String? = nil
+        notes: String? = nil,
+        clearNotes: Bool = false
     ) async -> Bool {
+        prepareForImmediateSave()
+
         do {
-            var processedFrontImage: Data?
-            if let frontImage {
-                processedFrontImage = try await Self.processImageInBackground(frontImage)
-            }
+            async let processedFrontImage: Data? = {
+                guard let frontImage else { return nil }
+                return try await Self.processImageInBackground(frontImage)
+            }()
 
-            var processedBackImage: Data?
-            if !clearBackImage, let backImage {
-                processedBackImage = try await Self.processImageInBackground(backImage)
-            }
+            async let processedBackImage: Data? = {
+                guard !clearBackImage, let backImage else { return nil }
+                return try await Self.processImageInBackground(backImage)
+            }()
 
-            if let name = name { card.name = name }
-            if let category = category { card.category = category }
-            if let processedFrontImage {
+            let mutationDate = Date()
+
+            if let name {
+                card.name = name
+            }
+            if let category {
+                card.category = category
+            }
+            if let processedFrontImage = try await processedFrontImage {
                 card.frontImageData = processedFrontImage
             }
             if clearBackImage {
                 card.backImageData = nil
-            } else if let processedBackImage {
+            } else if let processedBackImage = try await processedBackImage {
                 card.backImageData = processedBackImage
             }
-            if let notes = notes { card.notes = notes }
+            if clearNotes {
+                card.notes = nil
+            } else if let notes {
+                card.notes = notes
+            }
+
+            card.touchUpdatedAt(mutationDate)
             return save()
         } catch {
             lastError = error
@@ -223,6 +193,12 @@ class CardStore {
             return false
         }
     }
+
+    func clearError() {
+        lastError = nil
+    }
+
+    // MARK: - Persistence
 
     @discardableResult
     private func save() -> Bool {
@@ -240,28 +216,69 @@ class CardStore {
         return true
     }
 
-    /// Backfills IDs for legacy/synced records where UUID is nil.
-    /// This keeps SwiftUI identity stable without mutating during view rendering.
-    private func backfillMissingCardIDs() {
-        let request = Card.fetchRequest() as! NSFetchRequest<Card>
-        request.predicate = NSPredicate(format: "id == nil")
-
-        do {
-            let cardsMissingID = try context.fetch(request)
-            guard !cardsMissingID.isEmpty else { return }
-
-            for card in cardsMissingID {
-                card.id = UUID()
-            }
-
-            AppLogger.data.info("CardStore: Backfilling IDs for \(cardsMissingID.count) cards")
-            _ = save()
-        } catch {
-            AppLogger.data.error("CardStore.backfillMissingCardIDs failed: \(error.localizedDescription)")
+    private func scheduleAccessSave() {
+        pendingAccessSaveTask?.cancel()
+        pendingAccessSaveTask = Task { [weak self] in
+            let delay = UInt64(Constants.Persistence.accessSaveDebounceInterval * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled else { return }
+            self?.flushPendingAccessUpdates()
         }
     }
 
-    func clearError() {
-        lastError = nil
+    private func prepareForImmediateSave() {
+        pendingAccessSaveTask?.cancel()
+        pendingAccessSaveTask = nil
+        flushPendingAccessUpdates()
+    }
+
+    private func applyPendingAccessUpdates() {
+        guard !pendingAccessUpdates.isEmpty else { return }
+
+        let updates = pendingAccessUpdates
+        pendingAccessUpdates.removeAll()
+
+        for (objectID, accessedAt) in updates {
+            guard let card = try? context.existingObject(with: objectID) as? Card,
+                  !card.isDeleted else {
+                continue
+            }
+            card.updateLastAccessed(at: accessedAt)
+        }
+    }
+
+    private func flushPendingAccessUpdates() {
+        pendingAccessSaveTask = nil
+        guard !pendingAccessUpdates.isEmpty else { return }
+        applyPendingAccessUpdates()
+        _ = save()
+    }
+
+    /// Backfills IDs/timestamps for legacy records so identity and conflict resolution stay stable.
+    private func backfillLegacyMetadata() {
+        let request = Card.makeFetchRequest()
+        request.predicate = NSCompoundPredicate(orPredicateWithSubpredicates: [
+            NSPredicate(format: "\(Card.Attributes.id) == nil"),
+            NSPredicate(format: "\(Card.Attributes.updatedAt) == nil")
+        ])
+
+        do {
+            let legacyCards = try context.fetch(request)
+            guard !legacyCards.isEmpty else { return }
+
+            for card in legacyCards {
+                if card.id == nil {
+                    card.id = UUID()
+                }
+                if card.updatedAt == nil {
+                    card.updatedAt = card.lastAccessedAt ?? card.createdAt ?? Date()
+                }
+            }
+
+            AppLogger.data.info("CardStore: Backfilling metadata for \(legacyCards.count) cards")
+            _ = save()
+        } catch {
+            AppLogger.data.error("CardStore.backfillLegacyMetadata failed: \(error.localizedDescription)")
+        }
     }
 }

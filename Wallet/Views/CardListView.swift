@@ -62,14 +62,14 @@ struct CardListView: View {
     private let cardSpacing = Constants.CardLayout.cardSpacing
 
     init() {
-        let probeRequest = NSFetchRequest<Card>(entityName: "Card")
-        probeRequest.sortDescriptors = [NSSortDescriptor(key: "name", ascending: true)]
+        let probeRequest = Card.makeFetchRequest()
+        probeRequest.sortDescriptors = [NSSortDescriptor(key: Card.Attributes.name, ascending: true)]
         probeRequest.fetchLimit = 1
         probeRequest.includesPropertyValues = false
         probeRequest.returnsObjectsAsFaults = true
         _cardPresenceProbe = FetchRequest(fetchRequest: probeRequest, animation: .default)
 
-        let request = NSFetchRequest<Card>(entityName: "Card")
+        let request = Card.makeFetchRequest()
         request.fetchBatchSize = 40
         request.sortDescriptors = Self.sortDescriptors(for: .recentlyUsed)
         _displayedCards = FetchRequest(fetchRequest: request, animation: .default)
@@ -300,12 +300,12 @@ struct CardListView: View {
 
     private static func sortDescriptors(for sort: CardListSort) -> [NSSortDescriptor] {
         let nameAscending = NSSortDescriptor(
-            key: "name",
+            key: Card.Attributes.name,
             ascending: true,
             selector: #selector(NSString.localizedCaseInsensitiveCompare(_:))
         )
         let nameDescending = NSSortDescriptor(
-            key: "name",
+            key: Card.Attributes.name,
             ascending: false,
             selector: #selector(NSString.localizedCaseInsensitiveCompare(_:))
         )
@@ -313,7 +313,7 @@ struct CardListView: View {
         switch sort {
         case .recentlyUsed:
             return [
-                NSSortDescriptor(key: "lastAccessedAt", ascending: false),
+                NSSortDescriptor(key: Card.Attributes.lastAccessedAt, ascending: false),
                 nameAscending
             ]
         case .nameAZ:
@@ -322,12 +322,12 @@ struct CardListView: View {
             return [nameDescending]
         case .newest:
             return [
-                NSSortDescriptor(key: "createdAt", ascending: false),
+                NSSortDescriptor(key: Card.Attributes.createdAt, ascending: false),
                 nameAscending
             ]
         case .oldest:
             return [
-                NSSortDescriptor(key: "createdAt", ascending: true),
+                NSSortDescriptor(key: Card.Attributes.createdAt, ascending: true),
                 nameAscending
             ]
         }
@@ -344,16 +344,16 @@ struct CardListView: View {
         case .all:
             break
         case .favorites:
-            predicates.append(NSPredicate(format: "isFavorite == YES"))
+            predicates.append(NSPredicate(format: "\(Card.Attributes.isFavorite) == YES"))
         case .withBack:
-            predicates.append(NSPredicate(format: "backImageData != nil"))
+            predicates.append(NSPredicate(format: "\(Card.Attributes.backImageData) != nil"))
         case .category:
-            predicates.append(NSPredicate(format: "categoryRaw == %@", selectedCategory.rawValue))
+            predicates.append(NSPredicate(format: "\(Card.Attributes.categoryRaw) == %@", selectedCategory.rawValue))
         }
 
         if !trimmedSearchText.isEmpty {
             predicates.append(NSPredicate(
-                format: "(name CONTAINS[cd] %@) OR (notes CONTAINS[cd] %@)",
+                format: "(\(Card.Attributes.name) CONTAINS[cd] %@) OR (\(Card.Attributes.notes) CONTAINS[cd] %@)",
                 trimmedSearchText,
                 trimmedSearchText
             ))
@@ -488,6 +488,8 @@ struct VisibleCardShape: Shape {
 }
 
 #Preview {
+    let preview = PersistenceController.preview
     CardListView()
-        .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+        .environment(\.managedObjectContext, preview.container.viewContext)
+        .environment(CardStore(context: preview.container.viewContext))
 }

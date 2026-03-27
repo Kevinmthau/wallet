@@ -19,6 +19,7 @@ struct AutoCaptureScanner: View {
 
     @State private var camera = CameraManager()
     @State private var detectedRectangle: VNRectangleObservation?
+    @State private var previousDetectedRectangle: VNRectangleObservation?
     @State private var isCapturing = false
     @State private var isProcessingOCR = false
     @State private var captureProgress: CGFloat = 0
@@ -219,8 +220,13 @@ struct AutoCaptureScanner: View {
         if let observation = observation {
             let area = observation.boundingBox.width * observation.boundingBox.height
             if area > Constants.Scanner.minimumCardAreaRatio {
+                let stableEnough = previousDetectedRectangle.map { prior in
+                    isStable(observation, relativeTo: prior)
+                } ?? true
+
                 detectedRectangle = observation
-                stableFrameCount += 1
+                previousDetectedRectangle = observation
+                stableFrameCount = stableEnough ? stableFrameCount + 1 : 1
 
                 // Update progress
                 let progress = min(CGFloat(stableFrameCount) / CGFloat(requiredStableFrames), 1.0)
@@ -249,8 +255,24 @@ struct AutoCaptureScanner: View {
             }
             if stableFrameCount == 0 {
                 detectedRectangle = nil
+                previousDetectedRectangle = nil
             }
         }
+    }
+
+    private func isStable(_ observation: VNRectangleObservation, relativeTo previousObservation: VNRectangleObservation) -> Bool {
+        let currentBox = observation.boundingBox
+        let previousBox = previousObservation.boundingBox
+
+        let horizontalMovement = abs(currentBox.midX - previousBox.midX)
+        let verticalMovement = abs(currentBox.midY - previousBox.midY)
+        let widthDelta = abs(currentBox.width - previousBox.width)
+        let heightDelta = abs(currentBox.height - previousBox.height)
+
+        return horizontalMovement <= Constants.Scanner.stabilityPositionTolerance &&
+            verticalMovement <= Constants.Scanner.stabilityPositionTolerance &&
+            widthDelta <= Constants.Scanner.stabilitySizeTolerance &&
+            heightDelta <= Constants.Scanner.stabilitySizeTolerance
     }
 
     // MARK: - Capture
