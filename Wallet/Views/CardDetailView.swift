@@ -150,7 +150,7 @@ struct CardDetailView: View {
     let preview = PersistenceController.preview
     let context = preview.container.viewContext
     let cards = (try? context.fetch(Card.makeFetchRequest())) ?? []
-    let card = cards.first ?? Card(context: context)
+    let card = cards.first ?? Card.insert(into: context)
     return CardDetailView(card: card)
         .environment(\.managedObjectContext, context)
         .environment(CardStore(context: preview.container.viewContext))

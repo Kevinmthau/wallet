@@ -119,7 +119,7 @@ final class CardStoreTests: XCTestCase {
 
     func testBackfillsMissingIDsAndUpdatedAtOnInit() throws {
         let originalAccessDate = Date().addingTimeInterval(-120)
-        let card = Card(context: context)
+        let card = Card.insert(into: context)
         card.id = nil
         card.name = "Legacy Card"
         card.category = .other
@@ -142,68 +142,102 @@ final class CardStoreTests: XCTestCase {
     }
 
     func testTimestampMergePolicyPrefersNewerStoreVersion() throws {
-        let objectID = try seedConflictTestCard()
+        let storeURL = makeTemporaryStoreURL()
+        do {
+            let seedingPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let objectURI = try seedConflictTestCard(in: seedingPersistence.container.viewContext)
+                .uriRepresentation()
 
-        let newerContext = persistence.makeBackgroundContext()
-        let olderContext = persistence.makeBackgroundContext()
-        let newerTimestamp = Date().addingTimeInterval(20)
-        let olderTimestamp = Date().addingTimeInterval(10)
+            let newerPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let olderPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let verificationPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let newerObjectID = try resolveObjectID(from: objectURI, in: newerPersistence)
+            let olderObjectID = try resolveObjectID(from: objectURI, in: olderPersistence)
+            let verificationObjectID = try resolveObjectID(from: objectURI, in: verificationPersistence)
+            let newerContext = newerPersistence.makeBackgroundContext()
+            let olderContext = olderPersistence.makeBackgroundContext()
+            let newerTimestamp = Date().addingTimeInterval(20)
+            let olderTimestamp = Date().addingTimeInterval(10)
 
-        try performAndWait(in: newerContext) {
-            let card = try XCTUnwrap(try newerContext.existingObject(with: objectID) as? Card)
-            card.name = "Store Wins"
-            card.updatedAt = newerTimestamp
-            try newerContext.save()
-        }
+            try performAndWait(in: newerContext) {
+                let card = try XCTUnwrap(try newerContext.existingObject(with: newerObjectID) as? Card)
+                card.name = "Store Wins"
+                card.updatedAt = newerTimestamp
+            }
 
-        try performAndWait(in: olderContext) {
-            let card = try XCTUnwrap(try olderContext.existingObject(with: objectID) as? Card)
-            card.name = "Stale Update"
-            card.updatedAt = olderTimestamp
-            try olderContext.save()
-        }
+            try performAndWait(in: olderContext) {
+                let card = try XCTUnwrap(try olderContext.existingObject(with: olderObjectID) as? Card)
+                card.name = "Stale Update"
+                card.updatedAt = olderTimestamp
+            }
 
-        let verificationContext = persistence.makeBackgroundContext()
-        try performAndWait(in: verificationContext) {
-            let card = try XCTUnwrap(try verificationContext.existingObject(with: objectID) as? Card)
-            XCTAssertEqual(card.name, "Store Wins")
-            XCTAssertEqual(try XCTUnwrap(card.updatedAt), newerTimestamp)
+            try performAndWait(in: newerContext) {
+                try newerContext.save()
+            }
+
+            try performAndWait(in: olderContext) {
+                try olderContext.save()
+            }
+
+            let verificationContext = verificationPersistence.makeBackgroundContext()
+            try performAndWait(in: verificationContext) {
+                let card = try XCTUnwrap(try verificationContext.existingObject(with: verificationObjectID) as? Card)
+                XCTAssertEqual(card.name, "Store Wins")
+                XCTAssertEqual(try XCTUnwrap(card.updatedAt), newerTimestamp)
+            }
         }
     }
 
     func testTimestampMergePolicyPrefersNewerLocalVersion() throws {
-        let objectID = try seedConflictTestCard()
+        let storeURL = makeTemporaryStoreURL()
+        do {
+            let seedingPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let objectURI = try seedConflictTestCard(in: seedingPersistence.container.viewContext)
+                .uriRepresentation()
 
-        let olderContext = persistence.makeBackgroundContext()
-        let newerContext = persistence.makeBackgroundContext()
-        let olderTimestamp = Date().addingTimeInterval(10)
-        let newerTimestamp = Date().addingTimeInterval(20)
+            let olderPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let newerPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let verificationPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let olderObjectID = try resolveObjectID(from: objectURI, in: olderPersistence)
+            let newerObjectID = try resolveObjectID(from: objectURI, in: newerPersistence)
+            let verificationObjectID = try resolveObjectID(from: objectURI, in: verificationPersistence)
+            let olderContext = olderPersistence.makeBackgroundContext()
+            let newerContext = newerPersistence.makeBackgroundContext()
+            let olderTimestamp = Date().addingTimeInterval(10)
+            let newerTimestamp = Date().addingTimeInterval(20)
 
-        try performAndWait(in: olderContext) {
-            let card = try XCTUnwrap(try olderContext.existingObject(with: objectID) as? Card)
-            card.name = "Older Update"
-            card.updatedAt = olderTimestamp
-            try olderContext.save()
-        }
+            try performAndWait(in: olderContext) {
+                let card = try XCTUnwrap(try olderContext.existingObject(with: olderObjectID) as? Card)
+                card.name = "Older Update"
+                card.updatedAt = olderTimestamp
+            }
 
-        try performAndWait(in: newerContext) {
-            let card = try XCTUnwrap(try newerContext.existingObject(with: objectID) as? Card)
-            card.name = "Local Wins"
-            card.updatedAt = newerTimestamp
-            try newerContext.save()
-        }
+            try performAndWait(in: newerContext) {
+                let card = try XCTUnwrap(try newerContext.existingObject(with: newerObjectID) as? Card)
+                card.name = "Local Wins"
+                card.updatedAt = newerTimestamp
+            }
 
-        let verificationContext = persistence.makeBackgroundContext()
-        try performAndWait(in: verificationContext) {
-            let card = try XCTUnwrap(try verificationContext.existingObject(with: objectID) as? Card)
-            XCTAssertEqual(card.name, "Local Wins")
-            XCTAssertEqual(try XCTUnwrap(card.updatedAt), newerTimestamp)
+            try performAndWait(in: olderContext) {
+                try olderContext.save()
+            }
+
+            try performAndWait(in: newerContext) {
+                try newerContext.save()
+            }
+
+            let verificationContext = verificationPersistence.makeBackgroundContext()
+            try performAndWait(in: verificationContext) {
+                let card = try XCTUnwrap(try verificationContext.existingObject(with: verificationObjectID) as? Card)
+                XCTAssertEqual(card.name, "Local Wins")
+                XCTAssertEqual(try XCTUnwrap(card.updatedAt), newerTimestamp)
+            }
         }
     }
 
-    private func seedConflictTestCard() throws -> NSManagedObjectID {
+    private func seedConflictTestCard(in context: NSManagedObjectContext) throws -> NSManagedObjectID {
         let timestamp = Date()
-        let card = Card(context: context)
+        let card = Card.insert(into: context)
         card.id = UUID()
         card.name = "Conflict Card"
         card.category = .membership
@@ -214,6 +248,27 @@ final class CardStoreTests: XCTestCase {
 
         try context.save()
         return card.objectID
+    }
+
+    private func resolveObjectID(
+        from uri: URL,
+        in persistence: PersistenceController
+    ) throws -> NSManagedObjectID {
+        guard let objectID = persistence.container.persistentStoreCoordinator
+            .managedObjectID(forURIRepresentation: uri) else {
+            throw XCTSkip("Failed to resolve object ID for shared store URI")
+        }
+        return objectID
+    }
+
+    private func makeTemporaryStoreURL() -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        return directory.appendingPathComponent("Wallet.sqlite")
     }
 
     private func fetchCards(in context: NSManagedObjectContext? = nil) throws -> [Card] {

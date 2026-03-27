@@ -100,7 +100,7 @@ class CardStore {
             }()
 
             let mutationDate = Date()
-            let card = Card(context: context)
+            let card = Card.insert(into: context)
             card.id = UUID()
             card.name = name
             card.category = category

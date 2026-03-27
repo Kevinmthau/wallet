@@ -3,6 +3,7 @@ import Combine
 
 struct PersistenceController {
     static let shared = PersistenceController()
+    private static let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
     let container: NSPersistentCloudKitContainer
 
@@ -12,14 +13,20 @@ struct PersistenceController {
     /// Stored observer token for CloudKit remote change notifications
     private let remoteChangeObserver: NSObjectProtocol
 
-    init(inMemory: Bool = false) {
+    init(
+        inMemory: Bool = false,
+        storeURL: URL? = nil,
+        cloudKitEnabled: Bool? = nil
+    ) {
+        let cloudKitEnabled = cloudKitEnabled ?? (!inMemory && !Self.isRunningTests)
+
         // Create the managed object model programmatically
         let model = NSManagedObjectModel()
 
         // Define Card entity
         let cardEntity = NSEntityDescription()
         cardEntity.name = "Card"
-        cardEntity.managedObjectClassName = "Card"
+        cardEntity.managedObjectClassName = NSStringFromClass(Card.self)
 
         // Define attributes
         // Note: id is set dynamically when adding cards - not here
@@ -99,19 +106,22 @@ struct PersistenceController {
 
         container = NSPersistentCloudKitContainer(name: "Wallet", managedObjectModel: model)
 
-        if inMemory {
-            container.persistentStoreDescriptions.first?.url = URL(fileURLWithPath: "/dev/null")
-        }
-
-        // Configure for CloudKit sync
         if let description = container.persistentStoreDescriptions.first {
-            if !inMemory {
+            if let storeURL {
+                description.url = storeURL
+            } else if inMemory {
+                description.url = URL(fileURLWithPath: "/dev/null")
+            }
+
+            if !cloudKitEnabled {
+                description.cloudKitContainerOptions = nil
+            } else {
                 description.cloudKitContainerOptions = NSPersistentCloudKitContainerOptions(
                     containerIdentifier: "iCloud.com.kevinthau.wallet"
                 )
+                description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
+                description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
             }
-            description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
-            description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
             description.setOption(true as NSNumber, forKey: NSMigratePersistentStoresAutomaticallyOption)
             description.setOption(true as NSNumber, forKey: NSInferMappingModelAutomaticallyOption)
         } else {
@@ -124,7 +134,7 @@ struct PersistenceController {
             }
         }
 
-        Self.configure(context: container.viewContext)
+        Self.configureViewContext(container.viewContext)
 
         // Observe remote CloudKit changes and notify subscribers
         // Store the observer token to maintain the subscription
@@ -154,7 +164,7 @@ struct PersistenceController {
 
         for (index, name) in sampleNames.enumerated() {
             let referenceDate = Date().addingTimeInterval(TimeInterval(-index * 3600))
-            let card = Card(context: context)
+            let card = Card.insert(into: context)
             card.id = UUID()
             card.name = name
             card.category = sampleCategories[index]
@@ -181,12 +191,17 @@ struct PersistenceController {
 
     func makeBackgroundContext() -> NSManagedObjectContext {
         let context = container.newBackgroundContext()
-        Self.configure(context: context)
+        Self.configureBackgroundContext(context)
         return context
     }
 
-    private static func configure(context: NSManagedObjectContext) {
+    private static func configureViewContext(_ context: NSManagedObjectContext) {
         context.automaticallyMergesChangesFromParent = true
+        context.mergePolicy = CardTimestampMergePolicy()
+    }
+
+    private static func configureBackgroundContext(_ context: NSManagedObjectContext) {
+        context.automaticallyMergesChangesFromParent = false
         context.mergePolicy = CardTimestampMergePolicy()
     }
 }
@@ -240,12 +255,14 @@ final class CardTimestampMergePolicy: NSMergePolicy {
     private let localTimestampKey: String
 
     private func winner(for conflict: NSMergeConflict) -> ConflictWinner {
-        let objectTimestamp = timestamp(in: conflict.objectSnapshot)
+        let objectTimestamp = timestamp(in: conflict.sourceObject)
+            ?? timestamp(in: conflict.objectSnapshot)
+            ?? timestamp(in: conflict.cachedSnapshot)
         let storeTimestamp = timestamp(in: conflict.persistedSnapshot)
 
         switch (objectTimestamp, storeTimestamp) {
         case let (objectTimestamp?, storeTimestamp?):
-            return objectTimestamp >= storeTimestamp ? .object : .store
+            return objectTimestamp > storeTimestamp ? .object : .store
         case (.some, nil):
             return .object
         case (nil, .some):
@@ -253,6 +270,10 @@ final class CardTimestampMergePolicy: NSMergePolicy {
         case (nil, nil):
             return .object
         }
+    }
+
+    private func timestamp(in object: NSManagedObject?) -> Date? {
+        object?.value(forKey: localTimestampKey) as? Date
     }
 
     private func timestamp(in snapshot: [String: Any]?) -> Date? {

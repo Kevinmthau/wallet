@@ -100,6 +100,17 @@ public class Card: NSManagedObject, Identifiable {
         NSFetchRequest<Card>(entityName: Attributes.entityName)
     }
 
+    static func insert(into context: NSManagedObjectContext) -> Card {
+        guard let entity = NSEntityDescription.entity(
+            forEntityName: Attributes.entityName,
+            in: context
+        ) else {
+            preconditionFailure("Missing \(Attributes.entityName) entity description")
+        }
+
+        return Card(entity: entity, insertInto: context)
+    }
+
     /// Stable identifier for SwiftUI that never mutates model state during render.
     /// Falls back to Core Data object URI string if UUID is temporarily missing.
     var stableId: String {

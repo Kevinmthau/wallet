@@ -32,6 +32,12 @@ if [[ -z "$DESTINATION" ]]; then
     | grep -v "dvtdevice-DVTiOSDeviceSimulatorPlaceholder-iphonesimulator:placeholder" \
     | head -n 1 || true)"
 
+  if [[ -z "$discovered_id" ]]; then
+    discovered_id="$(xcrun simctl list devices available 2>/dev/null \
+      | awk -F '[()]' '/(Shutdown|Booted)/ { print $2; exit }' \
+      | head -n 1 || true)"
+  fi
+
   if [[ -n "$discovered_id" ]]; then
     DESTINATION="id=$discovered_id"
   else
