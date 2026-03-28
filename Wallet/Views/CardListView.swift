@@ -408,8 +408,17 @@ struct CardListView: View {
                         }
                     },
                     onDelete: {
-                        withAnimation {
-                            _ = cardStore.delete(card)
+                        if selectedCard != nil {
+                            selectedCard = nil
+                            DispatchQueue.main.asyncAfter(deadline: .now() + Constants.Animation.dismissActionDelay) {
+                                withAnimation {
+                                    _ = cardStore.delete(card)
+                                }
+                            }
+                        } else {
+                            withAnimation {
+                                _ = cardStore.delete(card)
+                            }
                         }
                     }
                 )
