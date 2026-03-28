@@ -19,7 +19,6 @@ struct CardFormView: View {
     @State private var name: String
     @State private var category: CardCategory
     @State private var notes: String
-    @State private var showingDeleteConfirmation = false
     @State private var showingErrorAlert = false
     @State private var isSaving = false
 
@@ -32,11 +31,6 @@ struct CardFormView: View {
     private var isEditMode: Bool {
         if case .edit = mode { return true }
         return false
-    }
-
-    private var cardToEdit: Card? {
-        if case .edit(let card) = mode { return card }
-        return nil
     }
 
     private var navigationTitle: String {
@@ -76,10 +70,6 @@ struct CardFormView: View {
                 CardImagesSection(imageState: imageState, isEditMode: isEditMode)
                 cardDetailsSection
                 notesSection
-
-                if isEditMode {
-                    deleteSection
-                }
             }
             .disabled(isSaving)
             .scrollDismissesKeyboard(.interactively)
@@ -89,19 +79,6 @@ struct CardFormView: View {
                 onCancel: { dismiss() },
                 onSave: save
             )
-            .confirmationDialog("Delete Card", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
-                Button("Delete", role: .destructive) {
-                    if let card = cardToEdit {
-                        dismiss()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + Constants.Animation.dismissActionDelay) {
-                            cardStore.delete(card)
-                        }
-                    }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Are you sure you want to delete this card? This cannot be undone.")
-            }
             .alert("Error", isPresented: $showingErrorAlert) {
                 Button("OK") {
                     cardStore.clearError()
@@ -152,20 +129,6 @@ struct CardFormView: View {
         } footer: {
             if !isEditMode {
                 Text("Add any important information you want to remember about this card.")
-            }
-        }
-    }
-
-    private var deleteSection: some View {
-        Section {
-            Button(role: .destructive) {
-                showingDeleteConfirmation = true
-            } label: {
-                HStack {
-                    Spacer()
-                    Text("Delete Card")
-                    Spacer()
-                }
             }
         }
     }

@@ -282,7 +282,11 @@ struct CardListView: View {
             CardFormView(mode: .edit(card))
         }
         .fullScreenCover(item: $selectedCard) { card in
-            FullScreenCardView(card: card)
+            FullScreenCardView(
+                card: card,
+                onViewed: { markCardAccessed(card) },
+                onDelete: deleteCardFromViewer
+            )
         }
         .onAppear(perform: refreshDisplayedCardsFetch)
         .onChange(of: filterRawValue) { _, _ in
@@ -438,6 +442,19 @@ struct CardListView: View {
         return Constants.Animation.ElasticStack.maxStretch * tanh(drag * Constants.Animation.ElasticStack.resistance)
     }
 
+    private func markCardAccessed(_ card: Card) {
+        cardStore.markAccessed(card)
+    }
+
+    private func deleteCardFromViewer(_ card: Card) {
+        let cardToDelete = card
+        selectedCard = nil
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + Constants.Animation.dismissActionDelay) {
+            _ = cardStore.delete(cardToDelete)
+        }
+    }
+
     private var cardStack: some View {
         GeometryReader { geometry in
             let fanMultiplier = Constants.Animation.ElasticStack.fanMultiplier
@@ -462,7 +479,6 @@ struct CardListView: View {
                         onTap: {
                             AppLogger.ui.info("Card tapped: \(card.name) - opening full screen")
                             selectedCard = card
-                            cardStore.markAccessed(card)
                         },
                         onLongPress: {
                             cardToEdit = card

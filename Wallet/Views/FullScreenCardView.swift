@@ -4,6 +4,8 @@ import os
 struct FullScreenCardView: View {
     @Environment(\.dismiss) private var dismiss
     let card: Card
+    let onViewed: () -> Void
+    let onDelete: (Card) -> Void
 
     @State private var showingBack = false
     @State private var brightness: CGFloat = UIScreen.main.brightness
@@ -12,7 +14,7 @@ struct FullScreenCardView: View {
     @State private var showingShareSheet = false
     @State private var showingNotes = false
     @State private var showingDeleteConfirmation = false
-    @Environment(CardStore.self) private var cardStore
+    @State private var hasRecordedView = false
 
     private var imagesToShare: [UIImage] {
         var images: [UIImage] = []
@@ -137,6 +139,11 @@ struct FullScreenCardView: View {
             // Save current brightness and increase for better card visibility
             brightness = UIScreen.main.brightness
             UIScreen.main.brightness = 1.0
+
+            if !hasRecordedView {
+                hasRecordedView = true
+                onViewed()
+            }
         }
         .onDisappear {
             // Restore brightness to what it was before viewing the card
@@ -154,11 +161,7 @@ struct FullScreenCardView: View {
         }
         .confirmationDialog("Delete Card", isPresented: $showingDeleteConfirmation) {
             Button("Delete", role: .destructive) {
-                let cardToDelete = card
-                dismiss()
-                DispatchQueue.main.asyncAfter(deadline: .now() + Constants.Animation.dismissActionDelay) {
-                    cardStore.delete(cardToDelete)
-                }
+                onDelete(card)
             }
         } message: {
             Text("Are you sure you want to delete \"\(card.name)\"? This cannot be undone.")

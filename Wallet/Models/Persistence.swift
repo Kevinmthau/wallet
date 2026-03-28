@@ -1,6 +1,39 @@
 import CoreData
 import Combine
 
+private final class RemoteChangeLogCoalescer {
+    private let interval: TimeInterval
+    private var pendingCount = 0
+    private var pendingLog: DispatchWorkItem?
+
+    init(interval: TimeInterval = 2.0) {
+        self.interval = interval
+    }
+
+    func recordNotification() {
+        pendingCount += 1
+
+        guard pendingLog == nil else { return }
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+
+            let count = pendingCount
+            pendingCount = 0
+            pendingLog = nil
+
+            if count == 1 {
+                AppLogger.data.debug("PersistenceController: Received remote CloudKit change notification")
+            } else {
+                AppLogger.data.debug("PersistenceController: Received \(count) remote CloudKit change notifications")
+            }
+        }
+
+        pendingLog = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + interval, execute: workItem)
+    }
+}
+
 struct PersistenceController {
     static let shared = PersistenceController()
     private static let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
@@ -12,6 +45,7 @@ struct PersistenceController {
 
     /// Stored observer token for CloudKit remote change notifications
     private let remoteChangeObserver: NSObjectProtocol
+    private let remoteChangeLogCoalescer = RemoteChangeLogCoalescer()
 
     init(
         inMemory: Bool = false,
@@ -142,8 +176,8 @@ struct PersistenceController {
             forName: .NSPersistentStoreRemoteChange,
             object: container.persistentStoreCoordinator,
             queue: .main
-        ) { [remoteChangePublisher] _ in
-            AppLogger.data.info("PersistenceController: Received remote CloudKit change notification")
+        ) { [remoteChangePublisher, remoteChangeLogCoalescer] _ in
+            remoteChangeLogCoalescer.recordNotification()
             remoteChangePublisher.send()
         }
     }
