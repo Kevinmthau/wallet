@@ -15,6 +15,9 @@ enum Constants {
         /// Vertical spacing between stacked cards (collapsed)
         static let cardSpacing: CGFloat = 70
 
+        /// Curve used when compressing the stack to keep more space near the top
+        static let compressedStackExponent: CGFloat = 0.75
+
         /// Max pixel size used for list thumbnails to reduce decode/memory pressure
         static let listThumbnailMaxDimension: CGFloat = 720
 
