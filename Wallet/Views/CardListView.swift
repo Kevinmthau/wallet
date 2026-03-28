@@ -471,20 +471,6 @@ struct CardListView: View {
                             withAnimation {
                                 _ = cardStore.toggleFavorite(card)
                             }
-                        },
-                        onDelete: {
-                            if selectedCard != nil {
-                                selectedCard = nil
-                                DispatchQueue.main.asyncAfter(deadline: .now() + Constants.Animation.dismissActionDelay) {
-                                    withAnimation {
-                                        _ = cardStore.delete(card)
-                                    }
-                                }
-                            } else {
-                                withAnimation {
-                                    _ = cardStore.delete(card)
-                                }
-                            }
                         }
                     )
                     .offset(y: baseOffset + elasticFanOffset)
@@ -514,7 +500,6 @@ struct CardStackItem: View {
     let onTap: () -> Void
     let onLongPress: () -> Void
     let onFavoriteToggle: () -> Void
-    let onDelete: () -> Void
 
     var body: some View {
         WalletCardView(card: card)
@@ -525,12 +510,15 @@ struct CardStackItem: View {
                 onTap()
             }
             .contextMenu {
-                CardActionMenuContent(
-                    card: card,
-                    onEdit: onLongPress,
-                    onToggleFavorite: onFavoriteToggle,
-                    onDelete: onDelete
-                )
+                Button(action: onLongPress) {
+                    Label("Edit Card", systemImage: "pencil")
+                }
+                Button(action: onFavoriteToggle) {
+                    Label(
+                        card.isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                        systemImage: card.isFavorite ? "star.slash" : "star"
+                    )
+                }
             }
             .shadow(
                 color: .black.opacity(0.15),

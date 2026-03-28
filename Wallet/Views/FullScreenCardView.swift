@@ -11,6 +11,8 @@ struct FullScreenCardView: View {
     @State private var showingEditSheet = false
     @State private var showingShareSheet = false
     @State private var showingNotes = false
+    @State private var showingDeleteConfirmation = false
+    @Environment(CardStore.self) private var cardStore
 
     private var imagesToShare: [UIImage] {
         var images: [UIImage] = []
@@ -112,6 +114,14 @@ struct FullScreenCardView: View {
                             } label: {
                                 Label("Share", systemImage: "square.and.arrow.up")
                             }
+
+                            Divider()
+
+                            Button(role: .destructive) {
+                                showingDeleteConfirmation = true
+                            } label: {
+                                Label("Delete Card", systemImage: "trash")
+                            }
                         } label: {
                             Image(systemName: "ellipsis.circle.fill")
                                 .font(.title)
@@ -141,6 +151,17 @@ struct FullScreenCardView: View {
         }
         .sheet(isPresented: $showingNotes) {
             NotesSheet(notes: card.notes ?? "", cardName: card.name)
+        }
+        .confirmationDialog("Delete Card", isPresented: $showingDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                let cardToDelete = card
+                dismiss()
+                DispatchQueue.main.asyncAfter(deadline: .now() + Constants.Animation.dismissActionDelay) {
+                    cardStore.delete(cardToDelete)
+                }
+            }
+        } message: {
+            Text("Are you sure you want to delete \"\(card.name)\"? This cannot be undone.")
         }
     }
 }
