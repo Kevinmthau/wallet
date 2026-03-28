@@ -97,7 +97,7 @@ final class CardStoreTests: XCTestCase {
         XCTAssertNil(card.notes)
     }
 
-    func testMarkAccessedIsBatchedUntilAnotherSave() async throws {
+    func testMarkAccessedUpdatesTimestampImmediately() async throws {
         let addSuccess = await store.addCard(
             name: "Access Test",
             category: .membership,
@@ -110,7 +110,8 @@ final class CardStoreTests: XCTestCase {
 
         store.markAccessed(card)
 
-        XCTAssertEqual(card.lastAccessedAt, originalAccessDate)
+        XCTAssertGreaterThan(try XCTUnwrap(card.lastAccessedAt), originalAccessDate)
+        XCTAssertTrue(context.hasChanges)
 
         XCTAssertTrue(store.toggleFavorite(card))
         XCTAssertTrue(card.isFavorite)
