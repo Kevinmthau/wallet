@@ -83,6 +83,24 @@ class CardImageState {
         }
     }
 
+    /// Runs an async image operation while guaranteeing that:
+    /// - any prior in-flight task is cancelled first,
+    /// - `isEnhancing` is flipped on for the duration,
+    /// - cancellation is honored (no state is written if cancelled),
+    /// - `isEnhancing` and `currentTask` are always reset on exit.
+    private func runExclusiveImageTask(_ work: @MainActor @escaping () async -> Void) {
+        currentTask?.cancel()
+        isEnhancing = true
+        currentTask = Task { @MainActor in
+            defer {
+                isEnhancing = false
+                currentTask = nil
+            }
+            guard !Task.isCancelled else { return }
+            await work()
+        }
+    }
+
     // MARK: - Scan Result Handling
 
     func handleScanResult(_ result: ScanResult, isEditMode: Bool) {
@@ -90,95 +108,36 @@ class CardImageState {
         let target = scannerTarget
         setOCRResult(result.extractedText, for: target)
 
-        isEnhancing = true
-        currentTask?.cancel()
-        currentTask = Task {
-            guard !Task.isCancelled else {
-                await MainActor.run {
-                    self.isEnhancing = false
-                    self.currentTask = nil
-                }
-                return
-            }
-
+        runExclusiveImageTask { [weak self] in
             let enhanced = await ImageEnhancer.shared.enhanceAsync(result.image)
-
-            guard !Task.isCancelled else {
-                await MainActor.run {
-                    self.isEnhancing = false
-                    self.currentTask = nil
-                }
-                return
-            }
-
-            await MainActor.run {
-                self.setImage(enhanced, for: target, isEditMode: isEditMode)
-                self.isEnhancing = false
-                self.currentTask = nil
-            }
+            guard !Task.isCancelled, let self else { return }
+            self.setImage(enhanced, for: target, isEditMode: isEditMode)
         }
     }
 
     // MARK: - Photo Picker Handling
 
     func loadAndEnhanceImage(from item: PhotosPickerItem?, for target: ScanTarget, isEditMode: Bool) {
-        guard let item = item else { return }
+        guard let item else { return }
 
-        isEnhancing = true
-        currentTask?.cancel()
-        currentTask = Task {
+        runExclusiveImageTask { [weak self] in
             do {
-                guard !Task.isCancelled else {
-                    await MainActor.run {
-                        self.isEnhancing = false
-                        self.currentTask = nil
-                    }
-                    return
-                }
-
                 guard let data = try await item.loadTransferable(type: Data.self),
                       let image = UIImage(data: data) else {
-                    await MainActor.run {
-                        self.isEnhancing = false
-                        self.currentTask = nil
-                    }
                     return
                 }
-
-                guard !Task.isCancelled else {
-                    await MainActor.run {
-                        self.isEnhancing = false
-                        self.currentTask = nil
-                    }
-                    return
-                }
+                guard !Task.isCancelled else { return }
 
                 async let enhancedImage = ImageEnhancer.shared.enhanceAsync(image)
                 async let ocrResult = OCRExtractor.shared.extractText(from: image)
-
                 let enhanced = await enhancedImage
                 let extractedText = await ocrResult
 
-                guard !Task.isCancelled else {
-                    await MainActor.run {
-                        self.isEnhancing = false
-                        self.currentTask = nil
-                    }
-                    return
-                }
-
-                await MainActor.run {
-                    self.setImage(enhanced, for: target, isEditMode: isEditMode)
-                    self.setOCRResult(extractedText, for: target)
-                    self.isEnhancing = false
-                    self.currentTask = nil
-                }
+                guard !Task.isCancelled, let self else { return }
+                self.setImage(enhanced, for: target, isEditMode: isEditMode)
+                self.setOCRResult(extractedText, for: target)
             } catch {
                 AppLogger.ui.error("CardImageState: Failed to load image: \(error.localizedDescription)")
-                await MainActor.run {
-                    self.isEnhancing = false
-                    self.currentTask = nil
-                }
             }
         }
     }
@@ -188,32 +147,10 @@ class CardImageState {
     func enhanceImage(for target: ScanTarget, isEditMode: Bool) {
         guard let img = image(for: target) else { return }
 
-        isEnhancing = true
-        currentTask?.cancel()
-        currentTask = Task {
-            guard !Task.isCancelled else {
-                await MainActor.run {
-                    self.isEnhancing = false
-                    self.currentTask = nil
-                }
-                return
-            }
-
+        runExclusiveImageTask { [weak self] in
             let enhanced = await ImageEnhancer.shared.enhanceAsDocumentAsync(img)
-
-            guard !Task.isCancelled else {
-                await MainActor.run {
-                    self.isEnhancing = false
-                    self.currentTask = nil
-                }
-                return
-            }
-
-            await MainActor.run {
-                self.setImage(enhanced, for: target, isEditMode: isEditMode)
-                self.isEnhancing = false
-                self.currentTask = nil
-            }
+            guard !Task.isCancelled, let self else { return }
+            self.setImage(enhanced, for: target, isEditMode: isEditMode)
         }
     }
 

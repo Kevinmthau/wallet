@@ -15,24 +15,6 @@ struct OCRExtractionResult: Sendable {
     }
 }
 
-private final class OCRContinuationResumer<Value>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Value, Never>?
-
-    init(_ continuation: CheckedContinuation<Value, Never>) {
-        self.continuation = continuation
-    }
-
-    func resume(with value: Value) {
-        lock.lock()
-        let continuation = self.continuation
-        self.continuation = nil
-        lock.unlock()
-
-        continuation?.resume(returning: value)
-    }
-}
-
 final class OCRExtractor: @unchecked Sendable {
     static let shared = OCRExtractor()
 
@@ -52,7 +34,7 @@ final class OCRExtractor: @unchecked Sendable {
         }
 
         return await withCheckedContinuation { continuation in
-            let resumer = OCRContinuationResumer(continuation)
+            let resumer = ContinuationResumer(continuation)
 
             queue.asyncAfter(deadline: .now() + Constants.Scanner.ocrTimeout) {
                 AppLogger.scanner.warning("OCRExtractor: Text extraction timed out")

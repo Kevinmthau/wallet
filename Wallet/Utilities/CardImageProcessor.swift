@@ -4,26 +4,11 @@ import CoreImage.CIFilterBuiltins
 @preconcurrency import Dispatch
 @preconcurrency import Vision
 
-private final class ImageContinuationResumer<Value>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Value, Never>?
-
-    init(_ continuation: CheckedContinuation<Value, Never>) {
-        self.continuation = continuation
-    }
-
-    func resume(with value: Value) {
-        lock.lock()
-        let continuation = self.continuation
-        self.continuation = nil
-        lock.unlock()
-
-        continuation?.resume(returning: value)
-    }
-}
-
 final class CardImageProcessor: @unchecked Sendable {
     static let shared = CardImageProcessor()
+
+    /// Maximum image dimension before resizing
+    static let maxStorageDimension: CGFloat = 2048
 
     // Use shared CIContext from ImageEnhancer (expensive to create, should be reused)
     private let context = ImageProcessingContext.shared
@@ -34,6 +19,61 @@ final class CardImageProcessor: @unchecked Sendable {
     )
 
     private init() {}
+
+    // MARK: - Storage Preparation
+
+    /// Resizes (if above the storage dimension limit) and compresses an image for
+    /// persistent storage. Runs off the main thread.
+    func prepareForStorage(_ image: UIImage) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                autoreleasepool {
+                    do {
+                        let data = try Self.compressForStorage(image)
+                        continuation.resume(returning: data)
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Synchronous resize + compress for storage. Prefer `prepareForStorage(_:)` from UI code.
+    static func compressForStorage(_ image: UIImage) throws -> Data {
+        let resized = resizeIfNeeded(image, maxDimension: maxStorageDimension)
+        return try compress(resized)
+    }
+
+    static func resizeIfNeeded(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
+        let size = image.size
+        guard size.width > maxDimension || size.height > maxDimension else {
+            return image
+        }
+
+        let scale = size.width > size.height
+            ? maxDimension / size.width
+            : maxDimension / size.height
+        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+
+        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+        defer { UIGraphicsEndImageContext() }
+        image.draw(in: CGRect(origin: .zero, size: newSize))
+        return UIGraphicsGetImageFromCurrentImageContext() ?? image
+    }
+
+    private static func compress(_ image: UIImage) throws -> Data {
+        if let jpegData = image.jpegData(compressionQuality: Constants.jpegCompressionQuality) {
+            return jpegData
+        }
+
+        if let pngData = image.pngData() {
+            AppLogger.data.warning("CardImageProcessor: JPEG compression failed, using PNG fallback")
+            return pngData
+        }
+
+        throw CardError.imageCompressionFailed
+    }
 
     // MARK: - Orientation Correction
 
@@ -80,7 +120,7 @@ final class CardImageProcessor: @unchecked Sendable {
         }
 
         return await withCheckedContinuation { continuation in
-            let resumer = ImageContinuationResumer(continuation)
+            let resumer = ContinuationResumer(continuation)
 
             queue.asyncAfter(deadline: .now() + Constants.Scanner.textDetectionTimeout) {
                 AppLogger.scanner.warning("CardImageProcessor: Text orientation detection timed out")
@@ -132,7 +172,7 @@ final class CardImageProcessor: @unchecked Sendable {
         }
 
         return await withCheckedContinuation { continuation in
-            let resumer = ImageContinuationResumer(continuation)
+            let resumer = ContinuationResumer(continuation)
 
             queue.asyncAfter(deadline: .now() + Constants.Scanner.textDetectionTimeout) {
                 AppLogger.scanner.warning("CardImageProcessor: Rectangle detection timed out")

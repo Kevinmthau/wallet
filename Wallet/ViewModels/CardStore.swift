@@ -10,74 +10,12 @@ class CardStore {
 
     var lastError: Error?
 
-    /// Maximum image dimension before resizing (2048px)
-    private nonisolated static let maxImageDimension: CGFloat = 2048
-
     private var pendingAccessUpdates: [NSManagedObjectID: Date] = [:]
     private var pendingAccessSaveTask: Task<Void, Never>?
 
     init(context: NSManagedObjectContext) {
         self.context = context
         backfillLegacyMetadata()
-    }
-
-    // MARK: - Image Validation
-
-    private nonisolated static func processImageInBackground(_ image: UIImage) async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                autoreleasepool {
-                    do {
-                        let data = try Self.validateAndCompressImage(image)
-                        continuation.resume(returning: data)
-                    } catch {
-                        continuation.resume(throwing: error)
-                    }
-                }
-            }
-        }
-    }
-
-    /// Resizes image if it exceeds max dimension, then compresses to JPEG/PNG
-    private nonisolated static func validateAndCompressImage(_ image: UIImage) throws -> Data {
-        let resizedImage = resizeImageIfNeeded(image, maxDimension: maxImageDimension)
-        return try compressImage(resizedImage)
-    }
-
-    private nonisolated static func resizeImageIfNeeded(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
-        let size = image.size
-        guard size.width > maxDimension || size.height > maxDimension else {
-            return image
-        }
-
-        let scale: CGFloat
-        if size.width > size.height {
-            scale = maxDimension / size.width
-        } else {
-            scale = maxDimension / size.height
-        }
-
-        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
-
-        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
-        defer { UIGraphicsEndImageContext() }
-
-        image.draw(in: CGRect(origin: .zero, size: newSize))
-
-        return UIGraphicsGetImageFromCurrentImageContext() ?? image
-    }
-
-    private nonisolated static func compressImage(_ image: UIImage) throws -> Data {
-        if let jpegData = image.jpegData(compressionQuality: Constants.jpegCompressionQuality) {
-            return jpegData
-        }
-
-        if let pngData = image.pngData() {
-            AppLogger.data.warning("CardStore: JPEG compression failed, using PNG fallback")
-            return pngData
-        }
-
-        throw CardError.imageCompressionFailed
     }
 
     // MARK: - Actions
@@ -93,10 +31,10 @@ class CardStore {
         prepareForImmediateSave()
 
         do {
-            async let processedFrontImage = Self.processImageInBackground(frontImage)
+            async let processedFrontImage = CardImageProcessor.shared.prepareForStorage(frontImage)
             async let processedBackImage: Data? = {
                 guard let backImage else { return nil }
-                return try await Self.processImageInBackground(backImage)
+                return try await CardImageProcessor.shared.prepareForStorage(backImage)
             }()
 
             let mutationDate = Date()
@@ -155,12 +93,12 @@ class CardStore {
         do {
             async let processedFrontImage: Data? = {
                 guard let frontImage else { return nil }
-                return try await Self.processImageInBackground(frontImage)
+                return try await CardImageProcessor.shared.prepareForStorage(frontImage)
             }()
 
             async let processedBackImage: Data? = {
                 guard !clearBackImage, let backImage else { return nil }
-                return try await Self.processImageInBackground(backImage)
+                return try await CardImageProcessor.shared.prepareForStorage(backImage)
             }()
 
             let mutationDate = Date()
