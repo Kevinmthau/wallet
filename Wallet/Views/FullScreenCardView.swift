@@ -4,6 +4,8 @@ import os
 struct FullScreenCardView: View {
     @Environment(\.dismiss) private var dismiss
     let card: Card
+    let onViewed: () -> Void
+    let onDelete: (Card) -> Void
 
     @State private var showingBack = false
     @State private var brightness: CGFloat = UIScreen.main.brightness
@@ -11,6 +13,8 @@ struct FullScreenCardView: View {
     @State private var showingEditSheet = false
     @State private var showingShareSheet = false
     @State private var showingNotes = false
+    @State private var showingDeleteConfirmation = false
+    @State private var hasRecordedView = false
 
     private var imagesToShare: [UIImage] {
         var images: [UIImage] = []
@@ -112,6 +116,14 @@ struct FullScreenCardView: View {
                             } label: {
                                 Label("Share", systemImage: "square.and.arrow.up")
                             }
+
+                            Divider()
+
+                            Button(role: .destructive) {
+                                showingDeleteConfirmation = true
+                            } label: {
+                                Label("Delete Card", systemImage: "trash")
+                            }
                         } label: {
                             Image(systemName: "ellipsis.circle.fill")
                                 .font(.title)
@@ -127,6 +139,11 @@ struct FullScreenCardView: View {
             // Save current brightness and increase for better card visibility
             brightness = UIScreen.main.brightness
             UIScreen.main.brightness = 1.0
+
+            if !hasRecordedView {
+                hasRecordedView = true
+                onViewed()
+            }
         }
         .onDisappear {
             // Restore brightness to what it was before viewing the card
@@ -141,6 +158,13 @@ struct FullScreenCardView: View {
         }
         .sheet(isPresented: $showingNotes) {
             NotesSheet(notes: card.notes ?? "", cardName: card.name)
+        }
+        .confirmationDialog("Delete Card", isPresented: $showingDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                onDelete(card)
+            }
+        } message: {
+            Text("Are you sure you want to delete \"\(card.name)\"? This cannot be undone.")
         }
     }
 }

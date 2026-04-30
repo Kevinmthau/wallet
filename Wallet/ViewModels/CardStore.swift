@@ -73,7 +73,9 @@ class CardStore {
     }
 
     func markAccessed(_ card: Card) {
-        pendingAccessUpdates[card.objectID] = Date()
+        let accessedAt = Date()
+        card.updateLastAccessed(at: accessedAt)
+        pendingAccessUpdates[card.objectID] = accessedAt
         scheduleAccessSave()
     }
 

@@ -40,6 +40,70 @@ private enum CardListSort: String, CaseIterable, Identifiable {
     }
 }
 
+struct CardStackLayout {
+    let offsets: [CGFloat]
+    let visibleHeights: [CGFloat]
+    let contentHeight: CGFloat
+
+    init(
+        cardCount: Int,
+        cardHeight: CGFloat,
+        preferredSpacing: CGFloat,
+        availableHeight: CGFloat,
+        compressionExponent: CGFloat = Constants.CardLayout.compressedStackExponent
+    ) {
+        let clampedAvailableHeight = max(0, availableHeight)
+
+        guard cardCount > 0 else {
+            offsets = []
+            visibleHeights = []
+            contentHeight = 0
+            return
+        }
+
+        guard cardCount > 1 else {
+            offsets = [0]
+            visibleHeights = [cardHeight]
+            contentHeight = min(cardHeight, clampedAvailableHeight)
+            return
+        }
+
+        let availableOffsetRange = max(0, clampedAvailableHeight - cardHeight)
+        let naturalLastOffset = CGFloat(cardCount - 1) * preferredSpacing
+        let computedOffsets: [CGFloat]
+
+        if naturalLastOffset <= availableOffsetRange {
+            computedOffsets = (0..<cardCount).map { CGFloat($0) * preferredSpacing }
+        } else if availableOffsetRange == 0 {
+            computedOffsets = Array(repeating: 0, count: cardCount)
+        } else {
+            let maxIndex = CGFloat(cardCount - 1)
+            computedOffsets = (0..<cardCount).map { index in
+                let progress = CGFloat(index) / maxIndex
+                let curvedProgress = CGFloat(pow(Double(progress), Double(compressionExponent)))
+                return availableOffsetRange * curvedProgress
+            }
+        }
+
+        let computedVisibleHeights = (0..<cardCount).map { index in
+            guard index < cardCount - 1 else { return cardHeight }
+            return max(0, computedOffsets[index + 1] - computedOffsets[index])
+        }
+
+        offsets = computedOffsets
+        visibleHeights = computedVisibleHeights
+        contentHeight = min(clampedAvailableHeight, (computedOffsets.last ?? 0) + cardHeight)
+    }
+
+    func offset(for index: Int) -> CGFloat {
+        offsets[index]
+    }
+
+    func visibleHeight(for index: Int) -> CGFloat {
+        visibleHeights[index]
+    }
+}
+
 struct CardListView: View {
     @Environment(CardStore.self) private var cardStore
 
@@ -200,7 +264,6 @@ struct CardListView: View {
                 Spacer()
             } else {
                 cardStack
-                Spacer(minLength: 0)
             }
         }
         .background(
@@ -219,7 +282,11 @@ struct CardListView: View {
             CardFormView(mode: .edit(card))
         }
         .fullScreenCover(item: $selectedCard) { card in
-            FullScreenCardView(card: card)
+            FullScreenCardView(
+                card: card,
+                onViewed: { markCardAccessed(card) },
+                onDelete: deleteCardFromViewer
+            )
         }
         .onAppear(perform: refreshDisplayedCardsFetch)
         .onChange(of: filterRawValue) { _, _ in
@@ -292,10 +359,6 @@ struct CardListView: View {
                 sortRawValue = CardListSort.recentlyUsed.rawValue
             }
         }
-    }
-
-    private var stackedHeight: CGFloat {
-        cardHeight + CGFloat(max(0, cards.count - 1)) * cardSpacing
     }
 
     private static func sortDescriptors(for sort: CardListSort) -> [NSSortDescriptor] {
@@ -379,83 +442,99 @@ struct CardListView: View {
         return Constants.Animation.ElasticStack.maxStretch * tanh(drag * Constants.Animation.ElasticStack.resistance)
     }
 
-    private var cardStack: some View {
-        let fanMultiplier = Constants.Animation.ElasticStack.fanMultiplier
+    private func markCardAccessed(_ card: Card) {
+        cardStore.markAccessed(card)
+    }
 
-        return ZStack(alignment: .top) {
-            ForEach(Array(cards.enumerated()), id: \.element.stableId) { index, card in
-                let isFrontCard = index == cards.count - 1
-                let baseOffset = CGFloat(index) * cardSpacing
-                let elasticFanOffset = elasticOffset(pullOffset) * (1 + CGFloat(index) * fanMultiplier)
+    private func deleteCardFromViewer(_ card: Card) {
+        let cardToDelete = card
+        selectedCard = nil
 
-                CardStackItem(
-                    card: card,
-                    index: index,
-                    totalCards: cards.count,
-                    cardHeight: cardHeight,
-                    isFrontCard: isFrontCard,
-                    onTap: {
-                        AppLogger.ui.info("Card tapped: \(card.name) - opening full screen")
-                        selectedCard = card
-                        cardStore.markAccessed(card)
-                    },
-                    onLongPress: {
-                        cardToEdit = card
-                    },
-                    onFavoriteToggle: {
-                        withAnimation {
-                            _ = cardStore.toggleFavorite(card)
-                        }
-                    },
-                    onDelete: {
-                        withAnimation {
-                            _ = cardStore.delete(card)
-                        }
-                    }
-                )
-                .offset(y: baseOffset + elasticFanOffset)
-                .zIndex(Double(index))
-            }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Constants.Animation.dismissActionDelay) {
+            _ = cardStore.delete(cardToDelete)
         }
-        .frame(height: stackedHeight, alignment: .top)
-        .gesture(
-            DragGesture()
-                .updating($pullOffset) { value, state, _ in
-                    state = value.translation.height
+    }
+
+    private var cardStack: some View {
+        GeometryReader { geometry in
+            let fanMultiplier = Constants.Animation.ElasticStack.fanMultiplier
+            let layout = CardStackLayout(
+                cardCount: cards.count,
+                cardHeight: cardHeight,
+                preferredSpacing: cardSpacing,
+                availableHeight: geometry.size.height
+            )
+
+            ZStack(alignment: .top) {
+                ForEach(Array(cards.enumerated()), id: \.element.stableId) { index, card in
+                    let isFrontCard = index == cards.count - 1
+                    let baseOffset = layout.offset(for: index)
+                    let elasticFanOffset = elasticOffset(pullOffset) * (1 + CGFloat(index) * fanMultiplier)
+
+                    CardStackItem(
+                        card: card,
+                        cardHeight: cardHeight,
+                        visibleHeight: layout.visibleHeight(for: index),
+                        isFrontCard: isFrontCard,
+                        onTap: {
+                            AppLogger.ui.info("Card tapped: \(card.name) - opening full screen")
+                            selectedCard = card
+                        },
+                        onLongPress: {
+                            cardToEdit = card
+                        },
+                        onFavoriteToggle: {
+                            withAnimation {
+                                _ = cardStore.toggleFavorite(card)
+                            }
+                        }
+                    )
+                    .offset(y: baseOffset + elasticFanOffset)
+                    .zIndex(Double(index))
                 }
-        )
-        .animation(.spring(response: 0.35, dampingFraction: 0.5), value: pullOffset)
+            }
+            .frame(height: layout.contentHeight, alignment: .top)
+            .frame(maxWidth: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture()
+                    .updating($pullOffset) { value, state, _ in
+                        state = value.translation.height
+                    }
+            )
+            .animation(.spring(response: 0.35, dampingFraction: 0.5), value: pullOffset)
+        }
     }
 }
 
 struct CardStackItem: View {
     let card: Card
-    let index: Int
-    let totalCards: Int
     let cardHeight: CGFloat
+    let visibleHeight: CGFloat
     var isFrontCard: Bool = false
     let onTap: () -> Void
     let onLongPress: () -> Void
     let onFavoriteToggle: () -> Void
-    let onDelete: () -> Void
-
-    private var cardSpacing: CGFloat { Constants.CardLayout.cardSpacing }
 
     var body: some View {
         WalletCardView(card: card)
             .frame(height: cardHeight)
             .padding(.horizontal, 16)
-            .contentShape(VisibleCardShape(isFrontCard: isFrontCard, cardSpacing: cardSpacing))
+            .contentShape(VisibleCardShape(isFrontCard: isFrontCard, visibleHeight: visibleHeight))
             .onTapGesture {
                 onTap()
             }
             .contextMenu {
-                CardActionMenuContent(
-                    card: card,
-                    onEdit: onLongPress,
-                    onToggleFavorite: onFavoriteToggle,
-                    onDelete: onDelete
-                )
+                Button(action: onLongPress) {
+                    Label("Edit Card", systemImage: "pencil")
+                }
+                Button(action: onFavoriteToggle) {
+                    Label(
+                        card.isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                        systemImage: card.isFavorite ? "star.slash" : "star"
+                    )
+                }
             }
             .shadow(
                 color: .black.opacity(0.15),
@@ -468,7 +547,7 @@ struct CardStackItem: View {
 
 struct VisibleCardShape: Shape {
     let isFrontCard: Bool
-    let cardSpacing: CGFloat
+    let visibleHeight: CGFloat
 
     func path(in rect: CGRect) -> Path {
         if isFrontCard {
@@ -480,7 +559,7 @@ struct VisibleCardShape: Shape {
                 x: rect.minX,
                 y: rect.minY,
                 width: rect.width,
-                height: cardSpacing
+                height: max(1, visibleHeight)
             )
             return Path(visibleRect)
         }

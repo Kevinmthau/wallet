@@ -97,7 +97,7 @@ final class CardStoreTests: XCTestCase {
         XCTAssertNil(card.notes)
     }
 
-    func testMarkAccessedIsBatchedUntilAnotherSave() async throws {
+    func testMarkAccessedUpdatesTimestampImmediately() async throws {
         let addSuccess = await store.addCard(
             name: "Access Test",
             category: .membership,
@@ -110,7 +110,8 @@ final class CardStoreTests: XCTestCase {
 
         store.markAccessed(card)
 
-        XCTAssertEqual(card.lastAccessedAt, originalAccessDate)
+        XCTAssertGreaterThan(try XCTUnwrap(card.lastAccessedAt), originalAccessDate)
+        XCTAssertTrue(context.hasChanges)
 
         XCTAssertTrue(store.toggleFavorite(card))
         XCTAssertTrue(card.isFavorite)
@@ -232,6 +233,44 @@ final class CardStoreTests: XCTestCase {
                 XCTAssertEqual(card.name, "Local Wins")
                 XCTAssertEqual(try XCTUnwrap(card.updatedAt), newerTimestamp)
             }
+        }
+    }
+
+    func testCardStackLayoutUsesPreferredSpacingWhenContentFits() {
+        let layout = CardStackLayout(
+            cardCount: 4,
+            cardHeight: 200,
+            preferredSpacing: 70,
+            availableHeight: 500
+        )
+
+        XCTAssertEqual(layout.offset(for: 0), 0, accuracy: 0.001)
+        XCTAssertEqual(layout.offset(for: 1), 70, accuracy: 0.001)
+        XCTAssertEqual(layout.offset(for: 2), 140, accuracy: 0.001)
+        XCTAssertEqual(layout.offset(for: 3), 210, accuracy: 0.001)
+        XCTAssertEqual(layout.visibleHeight(for: 0), 70, accuracy: 0.001)
+        XCTAssertEqual(layout.visibleHeight(for: 1), 70, accuracy: 0.001)
+        XCTAssertEqual(layout.visibleHeight(for: 2), 70, accuracy: 0.001)
+        XCTAssertEqual(layout.visibleHeight(for: 3), 200, accuracy: 0.001)
+        XCTAssertEqual(layout.contentHeight, 410, accuracy: 0.001)
+    }
+
+    func testCardStackLayoutCompressesLowerCardsWhenViewportIsTight() {
+        let layout = CardStackLayout(
+            cardCount: 8,
+            cardHeight: 200,
+            preferredSpacing: 70,
+            availableHeight: 520
+        )
+
+        XCTAssertEqual(layout.offset(for: 0), 0, accuracy: 0.001)
+        XCTAssertEqual(layout.offset(for: 7), 320, accuracy: 0.001)
+        XCTAssertGreaterThan(layout.visibleHeight(for: 0), layout.visibleHeight(for: 6))
+        XCTAssertLessThan(layout.visibleHeight(for: 6), 70)
+        XCTAssertLessThanOrEqual(layout.contentHeight, 520.001)
+
+        for index in 0..<7 {
+            XCTAssertGreaterThan(layout.offset(for: index + 1), layout.offset(for: index))
         }
     }
 
