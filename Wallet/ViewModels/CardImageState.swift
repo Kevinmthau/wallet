@@ -168,6 +168,13 @@ class CardImageState {
         setImage(nil, for: target, isEditMode: isEditMode)
     }
 
+    func setExistingImages(front: UIImage?, back: UIImage?) {
+        frontImage = front
+        backImage = back
+        frontChanged = false
+        backChanged = false
+    }
+
     // MARK: - OCR Text Collection
 
     func collectOCRTexts() -> [String] {

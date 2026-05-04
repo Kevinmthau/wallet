@@ -15,12 +15,16 @@ struct FullScreenCardView: View {
     @State private var showingNotes = false
     @State private var showingDeleteConfirmation = false
     @State private var hasRecordedView = false
+    @State private var frontDisplayImage: UIImage?
+    @State private var backDisplayImage: UIImage?
+    @State private var shareItems: [UIImage] = []
+    @State private var isPreparingShare = false
 
-    private var imagesToShare: [UIImage] {
-        var images: [UIImage] = []
-        if let front = card.frontImage { images.append(front) }
-        if let back = card.backImage { images.append(back) }
-        return images
+    private var displayImageLoadIdentifier: String {
+        [
+            CardImageRepository.shared.loadIdentifier(for: card, side: .front, variant: .display),
+            CardImageRepository.shared.loadIdentifier(for: card, side: .back, variant: .display)
+        ].joined(separator: "|")
     }
 
     var body: some View {
@@ -36,8 +40,8 @@ struct FullScreenCardView: View {
                 VStack(spacing: 0) {
                     // Card display area
                     FlippableCardView(
-                        frontImage: card.frontDisplayImage,
-                        backImage: card.backDisplayImage,
+                        frontImage: frontDisplayImage,
+                        backImage: backDisplayImage,
                         hasBack: card.hasBack,
                         showingBack: $showingBack,
                         showPlaceholders: false
@@ -112,10 +116,11 @@ struct FullScreenCardView: View {
                             }
 
                             Button {
-                                showingShareSheet = true
+                                prepareShareItems()
                             } label: {
                                 Label("Share", systemImage: "square.and.arrow.up")
                             }
+                            .disabled(isPreparingShare)
 
                             Divider()
 
@@ -154,7 +159,7 @@ struct FullScreenCardView: View {
             CardFormView(mode: .edit(card))
         }
         .sheet(isPresented: $showingShareSheet) {
-            ShareSheet(items: imagesToShare)
+            ShareSheet(items: shareItems)
         }
         .sheet(isPresented: $showingNotes) {
             NotesSheet(notes: card.notes ?? "", cardName: card.name)
@@ -165,6 +170,54 @@ struct FullScreenCardView: View {
             }
         } message: {
             Text("Are you sure you want to delete \"\(card.name)\"? This cannot be undone.")
+        }
+        .task(id: displayImageLoadIdentifier) {
+            await loadDisplayImages()
+        }
+    }
+
+    @MainActor
+    private func loadDisplayImages() async {
+        frontDisplayImage = await CardImageRepository.shared.image(
+            for: card,
+            side: .front,
+            variant: .display
+        )
+        backDisplayImage = await CardImageRepository.shared.image(
+            for: card,
+            side: .back,
+            variant: .display
+        )
+    }
+
+    @MainActor
+    private func prepareShareItems() {
+        guard !isPreparingShare else { return }
+        isPreparingShare = true
+
+        Task { @MainActor in
+            let frontImage = await CardImageRepository.shared.image(
+                for: card,
+                side: .front,
+                variant: .full
+            )
+            let backImage = await CardImageRepository.shared.image(
+                for: card,
+                side: .back,
+                variant: .full
+            )
+
+            var images: [UIImage] = []
+            if let front = frontImage {
+                images.append(front)
+            }
+            if let back = backImage {
+                images.append(back)
+            }
+
+            shareItems = images
+            isPreparingShare = false
+            showingShareSheet = !images.isEmpty
         }
     }
 }

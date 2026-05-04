@@ -50,7 +50,8 @@ final class CardStoreTests: XCTestCase {
         XCTAssertNotNil(card.frontImageData)
         XCTAssertNotNil(card.backImageData)
 
-        let savedFrontImage = try XCTUnwrap(card.frontImage)
+        let savedFrontData = try XCTUnwrap(card.frontImageData)
+        let savedFrontImage = try XCTUnwrap(UIImage(data: savedFrontData))
         XCTAssertLessThanOrEqual(max(savedFrontImage.size.width, savedFrontImage.size.height), 3072.0)
         XCTAssertGreaterThan(max(savedFrontImage.size.width, savedFrontImage.size.height), 2048.0)
     }
@@ -74,6 +75,90 @@ final class CardStoreTests: XCTestCase {
         XCTAssertEqual(data.first, 0xFF)
         XCTAssertEqual(data.dropFirst().first, 0xD8)
         XCTAssertNotNil(UIImage(data: data))
+    }
+
+    func testImageRepositoryDownsamplesThumbnailAndDisplayVariants() async throws {
+        let image = makeImage(width: 5000, height: 2500, color: .blue)
+        let data = try CardImageProcessor.compressForStorage(image)
+        let cacheIdentity = UUID().uuidString
+
+        let loadedThumbnail = await CardImageRepository.shared.image(
+            from: data,
+            cacheIdentity: cacheIdentity,
+            side: .front,
+            variant: .thumbnail
+        )
+        let loadedDisplayImage = await CardImageRepository.shared.image(
+            from: data,
+            cacheIdentity: cacheIdentity,
+            side: .front,
+            variant: .display
+        )
+        let thumbnail = try XCTUnwrap(loadedThumbnail)
+        let displayImage = try XCTUnwrap(loadedDisplayImage)
+
+        XCTAssertLessThanOrEqual(
+            max(thumbnail.pixelSize.width, thumbnail.pixelSize.height),
+            Constants.CardLayout.listThumbnailMaxDimension
+        )
+        XCTAssertLessThanOrEqual(
+            max(displayImage.pixelSize.width, displayImage.pixelSize.height),
+            Constants.CardLayout.displayImageMaxDimension
+        )
+        XCTAssertGreaterThan(
+            max(displayImage.pixelSize.width, displayImage.pixelSize.height),
+            max(thumbnail.pixelSize.width, thumbnail.pixelSize.height)
+        )
+    }
+
+    func testImageRepositoryReturnsCachedVariantForRepeatedRequest() async throws {
+        let image = makeImage(width: 1200, height: 800, color: .green)
+        let data = try CardImageProcessor.compressForStorage(image)
+        let cacheIdentity = UUID().uuidString
+
+        let loadedFirstImage = await CardImageRepository.shared.image(
+            from: data,
+            cacheIdentity: cacheIdentity,
+            side: .front,
+            variant: .thumbnail
+        )
+        let loadedSecondImage = await CardImageRepository.shared.image(
+            from: data,
+            cacheIdentity: cacheIdentity,
+            side: .front,
+            variant: .thumbnail
+        )
+        let firstImage = try XCTUnwrap(loadedFirstImage)
+        let secondImage = try XCTUnwrap(loadedSecondImage)
+
+        XCTAssertTrue(firstImage === secondImage)
+    }
+
+    func testImageRepositoryInvalidatesCacheWhenDataChanges() async throws {
+        let firstData = try CardImageProcessor.compressForStorage(
+            makeImage(width: 1200, height: 800, color: .red)
+        )
+        let secondData = try CardImageProcessor.compressForStorage(
+            makeImage(width: 1200, height: 800, color: .blue)
+        )
+        let cacheIdentity = UUID().uuidString
+
+        let loadedFirstImage = await CardImageRepository.shared.image(
+            from: firstData,
+            cacheIdentity: cacheIdentity,
+            side: .front,
+            variant: .thumbnail
+        )
+        let loadedSecondImage = await CardImageRepository.shared.image(
+            from: secondData,
+            cacheIdentity: cacheIdentity,
+            side: .front,
+            variant: .thumbnail
+        )
+        let firstImage = try XCTUnwrap(loadedFirstImage)
+        let secondImage = try XCTUnwrap(loadedSecondImage)
+
+        XCTAssertFalse(firstImage === secondImage)
     }
 
     func testUpdateCardCanClearBackImage() async throws {

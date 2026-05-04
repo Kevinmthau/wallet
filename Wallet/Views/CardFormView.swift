@@ -21,6 +21,7 @@ struct CardFormView: View {
     @State private var notes: String
     @State private var showingErrorAlert = false
     @State private var isSaving = false
+    @State private var didLoadExistingImages = false
 
     @FocusState private var focusedField: FormField?
 
@@ -42,7 +43,23 @@ struct CardFormView: View {
     }
 
     private var canSave: Bool {
-        !trimmedName.isEmpty && imageState.frontImage != nil && !isSaving
+        !trimmedName.isEmpty && hasRequiredFrontImage && !isSaving
+    }
+
+    private var hasRequiredFrontImage: Bool {
+        if isEditMode && !imageState.frontChanged {
+            return true
+        }
+
+        return imageState.frontImage != nil
+    }
+
+    private var existingImageLoadIdentifier: String? {
+        guard case .edit(let card) = mode else { return nil }
+        return [
+            CardImageRepository.shared.loadIdentifier(for: card, side: .front, variant: .display),
+            CardImageRepository.shared.loadIdentifier(for: card, side: .back, variant: .display)
+        ].joined(separator: "|")
     }
 
     init(mode: CardFormMode) {
@@ -57,10 +74,7 @@ struct CardFormView: View {
             _name = State(initialValue: card.name)
             _category = State(initialValue: card.category)
             _notes = State(initialValue: card.notes ?? "")
-            _imageState = State(initialValue: CardImageState(
-                frontImage: card.frontImage,
-                backImage: card.backImage
-            ))
+            _imageState = State(initialValue: CardImageState())
         }
     }
 
@@ -96,6 +110,9 @@ struct CardFormView: View {
             )
             .onDisappear {
                 imageState.cancelPendingTasks()
+            }
+            .task(id: existingImageLoadIdentifier) {
+                await loadExistingImagesIfNeeded()
             }
         }
     }
@@ -149,13 +166,18 @@ struct CardFormView: View {
     }
 
     private func save() {
-        guard let frontImage = imageState.frontImage, !isSaving else { return }
+        guard canSave, !isSaving else { return }
         isSaving = true
 
         Task { @MainActor in
             let success: Bool
             switch mode {
             case .add:
+                guard let frontImage = imageState.frontImage else {
+                    isSaving = false
+                    return
+                }
+
                 success = await cardStore.addCard(
                     name: trimmedName,
                     category: category,
@@ -168,7 +190,7 @@ struct CardFormView: View {
                     card,
                     name: trimmedName,
                     category: category,
-                    frontImage: imageState.frontChanged ? frontImage : nil,
+                    frontImage: imageState.frontChanged ? imageState.frontImage : nil,
                     backImage: imageState.backChanged ? imageState.backImage : nil,
                     clearBackImage: imageState.backChanged && imageState.backImage == nil,
                     notes: notes.isEmpty ? nil : notes,
@@ -183,6 +205,28 @@ struct CardFormView: View {
                 showingErrorAlert = true
             }
         }
+    }
+
+    @MainActor
+    private func loadExistingImagesIfNeeded() async {
+        guard case .edit(let card) = mode, !didLoadExistingImages else { return }
+
+        let frontImage = await CardImageRepository.shared.image(
+            for: card,
+            side: .front,
+            variant: .display
+        )
+        let backImage = await CardImageRepository.shared.image(
+            for: card,
+            side: .back,
+            variant: .display
+        )
+
+        imageState.setExistingImages(
+            front: frontImage,
+            back: backImage
+        )
+        didLoadExistingImages = true
     }
 }
 

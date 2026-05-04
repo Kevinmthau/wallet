@@ -3,6 +3,16 @@ import SwiftUI
 struct WalletCardView: View {
     let card: Card
 
+    @State private var thumbnailImage: UIImage?
+
+    private var imageLoadIdentifier: String {
+        CardImageRepository.shared.loadIdentifier(
+            for: card,
+            side: .front,
+            variant: .thumbnail
+        )
+    }
+
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -11,7 +21,7 @@ struct WalletCardView: View {
                     .fill(cardGradient)
 
                 // Card image if available
-                if let image = card.frontThumbnail ?? card.frontDisplayImage {
+                if let image = thumbnailImage {
                     Image(uiImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -60,6 +70,13 @@ struct WalletCardView: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .task(id: imageLoadIdentifier) {
+            thumbnailImage = await CardImageRepository.shared.image(
+                for: card,
+                side: .front,
+                variant: .thumbnail
+            )
         }
     }
 

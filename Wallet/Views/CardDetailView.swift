@@ -12,9 +12,11 @@ struct CardDetailView: View {
     @State private var offset: CGSize = .zero
     @State private var showingEdit = false
     @State private var showingDeleteConfirmation = false
+    @State private var frontDisplayImage: UIImage?
+    @State private var backDisplayImage: UIImage?
 
     private var cardAspectRatio: CGFloat {
-        guard let image = card.frontDisplayImage else { return Constants.CardLayout.aspectRatio }
+        guard let image = frontDisplayImage else { return Constants.CardLayout.aspectRatio }
         let ratio = image.size.width / image.size.height
         AppLogger.ui.debug("Card aspect ratio: \(ratio) (w: \(image.size.width), h: \(image.size.height))")
         return ratio
@@ -24,14 +26,21 @@ struct CardDetailView: View {
         cardAspectRatio < 1.0
     }
 
+    private var displayImageLoadIdentifier: String {
+        [
+            CardImageRepository.shared.loadIdentifier(for: card, side: .front, variant: .display),
+            CardImageRepository.shared.loadIdentifier(for: card, side: .back, variant: .display)
+        ].joined(separator: "|")
+    }
+
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
                 VStack(spacing: isPortrait ? 16 : 24) {
                     // Card Image with flip animation
                     FlippableCardView(
-                        frontImage: card.frontDisplayImage,
-                        backImage: card.backDisplayImage,
+                        frontImage: frontDisplayImage,
+                        backImage: backDisplayImage,
                         hasBack: card.hasBack,
                         showingBack: $showingBack
                     )
@@ -138,11 +147,28 @@ struct CardDetailView: View {
             .sheet(isPresented: $showingEdit) {
                 CardFormView(mode: .edit(card))
             }
+            .task(id: displayImageLoadIdentifier) {
+                await loadDisplayImages()
+            }
         }
     }
 
     private func toggleFavorite() {
         cardStore.toggleFavorite(card)
+    }
+
+    @MainActor
+    private func loadDisplayImages() async {
+        frontDisplayImage = await CardImageRepository.shared.image(
+            for: card,
+            side: .front,
+            variant: .display
+        )
+        backDisplayImage = await CardImageRepository.shared.image(
+            for: card,
+            side: .back,
+            variant: .display
+        )
     }
 }
 

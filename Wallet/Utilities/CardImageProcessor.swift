@@ -46,20 +46,7 @@ final class CardImageProcessor: @unchecked Sendable {
     }
 
     static func resizeIfNeeded(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
-        let pixelSize = image.pixelSize
-        guard pixelSize.width > maxDimension || pixelSize.height > maxDimension else {
-            return image
-        }
-
-        let resizeScale = pixelSize.width > pixelSize.height
-            ? maxDimension / pixelSize.width
-            : maxDimension / pixelSize.height
-        let newSize = CGSize(width: pixelSize.width * resizeScale, height: pixelSize.height * resizeScale)
-
-        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
-        defer { UIGraphicsEndImageContext() }
-        image.draw(in: CGRect(origin: .zero, size: newSize))
-        return UIGraphicsGetImageFromCurrentImageContext() ?? image
+        CardImageRepository.resizeIfNeeded(image, maxDimension: maxDimension)
     }
 
     private static func compress(_ image: UIImage) throws -> Data {
@@ -83,33 +70,19 @@ final class CardImageProcessor: @unchecked Sendable {
             return image
         }
 
-        UIGraphicsBeginImageContextWithOptions(image.size, false, image.scale)
-        defer { UIGraphicsEndImageContext() }  // Ensure context cleanup on all exit paths
-
-        image.draw(in: CGRect(origin: .zero, size: image.size))
-        let normalizedImage = UIGraphicsGetImageFromCurrentImageContext()
-
-        return normalizedImage ?? image
+        return CardImageRepository.redraw(image)
     }
 
     /// Rotates image by specified radians (e.g., .pi / 2 for 90 degrees)
     private static func rotateImage(_ image: UIImage, by radians: CGFloat) -> UIImage {
         let rotatedSize = CGSize(width: image.size.height, height: image.size.width)
 
-        UIGraphicsBeginImageContextWithOptions(rotatedSize, false, image.scale)
-        defer { UIGraphicsEndImageContext() }  // Ensure context cleanup on all exit paths
-
-        guard let context = UIGraphicsGetCurrentContext() else { return image }
-
-        context.translateBy(x: rotatedSize.width / 2, y: rotatedSize.height / 2)
-        context.rotate(by: radians)
-        context.translateBy(x: -image.size.width / 2, y: -image.size.height / 2)
-
-        image.draw(at: .zero)
-
-        let rotatedImage = UIGraphicsGetImageFromCurrentImageContext()
-
-        return rotatedImage ?? image
+        return CardImageRepository.redraw(image, size: rotatedSize) { context, size in
+            context.translateBy(x: size.width / 2, y: size.height / 2)
+            context.rotate(by: radians)
+            context.translateBy(x: -image.size.width / 2, y: -image.size.height / 2)
+            image.draw(at: .zero)
+        }
     }
 
     /// Uses text detection to determine if image needs rotation for proper reading orientation (async version)
@@ -382,15 +355,5 @@ final class CardImageProcessor: @unchecked Sendable {
             scale: scale,
             orientation: orientation
         )
-    }
-}
-
-private extension UIImage {
-    var pixelSize: CGSize {
-        if let cgImage {
-            return CGSize(width: cgImage.width, height: cgImage.height)
-        }
-
-        return CGSize(width: size.width * scale, height: size.height * scale)
     }
 }
