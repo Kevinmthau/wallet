@@ -51,7 +51,29 @@ final class CardStoreTests: XCTestCase {
         XCTAssertNotNil(card.backImageData)
 
         let savedFrontImage = try XCTUnwrap(card.frontImage)
-        XCTAssertLessThanOrEqual(max(savedFrontImage.size.width, savedFrontImage.size.height), 2048.0)
+        XCTAssertLessThanOrEqual(max(savedFrontImage.size.width, savedFrontImage.size.height), 3072.0)
+        XCTAssertGreaterThan(max(savedFrontImage.size.width, savedFrontImage.size.height), 2048.0)
+    }
+
+    func testImageStorageResizesToHigherQualityDimensionLimit() throws {
+        let image = makeImage(width: 5000, height: 2500, color: .blue)
+
+        let data = try CardImageProcessor.compressForStorage(image)
+        let savedImage = try XCTUnwrap(UIImage(data: data))
+
+        XCTAssertEqual(max(savedImage.size.width, savedImage.size.height), 3072.0, accuracy: 1.0)
+        XCTAssertGreaterThan(max(savedImage.size.width, savedImage.size.height), 2048.0)
+    }
+
+    func testImageStorageProducesNonEmptyJPEGData() throws {
+        let image = makeImage(width: 1800, height: 1200, color: .green)
+
+        let data = try CardImageProcessor.compressForStorage(image)
+
+        XCTAssertFalse(data.isEmpty)
+        XCTAssertEqual(data.first, 0xFF)
+        XCTAssertEqual(data.dropFirst().first, 0xD8)
+        XCTAssertNotNil(UIImage(data: data))
     }
 
     func testUpdateCardCanClearBackImage() async throws {

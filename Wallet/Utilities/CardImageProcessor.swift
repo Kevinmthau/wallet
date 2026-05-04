@@ -8,7 +8,7 @@ final class CardImageProcessor: @unchecked Sendable {
     static let shared = CardImageProcessor()
 
     /// Maximum image dimension before resizing
-    static let maxStorageDimension: CGFloat = 2048
+    static let maxStorageDimension: CGFloat = 3072
 
     // Use shared CIContext from ImageEnhancer (expensive to create, should be reused)
     private let context = ImageProcessingContext.shared
@@ -46,15 +46,15 @@ final class CardImageProcessor: @unchecked Sendable {
     }
 
     static func resizeIfNeeded(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
-        let size = image.size
-        guard size.width > maxDimension || size.height > maxDimension else {
+        let pixelSize = image.pixelSize
+        guard pixelSize.width > maxDimension || pixelSize.height > maxDimension else {
             return image
         }
 
-        let scale = size.width > size.height
-            ? maxDimension / size.width
-            : maxDimension / size.height
-        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+        let resizeScale = pixelSize.width > pixelSize.height
+            ? maxDimension / pixelSize.width
+            : maxDimension / pixelSize.height
+        let newSize = CGSize(width: pixelSize.width * resizeScale, height: pixelSize.height * resizeScale)
 
         UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
         defer { UIGraphicsEndImageContext() }
@@ -382,5 +382,15 @@ final class CardImageProcessor: @unchecked Sendable {
             scale: scale,
             orientation: orientation
         )
+    }
+}
+
+private extension UIImage {
+    var pixelSize: CGSize {
+        if let cgImage {
+            return CGSize(width: cgImage.width, height: cgImage.height)
+        }
+
+        return CGSize(width: size.width * scale, height: size.height * scale)
     }
 }

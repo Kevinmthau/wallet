@@ -9,9 +9,13 @@ struct ScannerOverlayModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .fullScreenCover(isPresented: $imageState.showingScanner) {
-                AutoCaptureScanner { scanResult in
-                    imageState.handleScanResult(scanResult, isEditMode: isEditMode)
-                    onScanComplete()
+                if DocumentScannerView.isSupported {
+                    DocumentScannerView { scanResult in
+                        imageState.handleScanResult(scanResult, isEditMode: isEditMode)
+                        onScanComplete()
+                    }
+                } else {
+                    ScannerUnavailableView()
                 }
             }
             .overlay {

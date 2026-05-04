@@ -4,7 +4,7 @@ enum Constants {
     // MARK: - Image Compression
 
     /// JPEG compression quality for card images (0.0 - 1.0)
-    static let jpegCompressionQuality: CGFloat = 0.8
+    static let jpegCompressionQuality: CGFloat = 0.92
 
     // MARK: - Card Layout
 

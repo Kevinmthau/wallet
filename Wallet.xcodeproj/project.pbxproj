@@ -3,13 +3,14 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
 		1CA575A845A155814EFCA106 /* Card.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC62403B132ADD2B50590C4B /* Card.swift */; };
 		2027E9A872089AE9BE69106D /* CardPhotoPickerModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40DC516F694F9AAEC6AB9D98 /* CardPhotoPickerModifier.swift */; };
 		2C1BB2190FFDEFF5F976AC08 /* WalletApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22347D546016DE147C289EE3 /* WalletApp.swift */; };
+		2E5378738A82B3242C7A6342 /* DocumentScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BED43B9F6D4CCF24D3385A2C /* DocumentScannerView.swift */; };
 		3B023DC1BEF530E78FDB20DC /* CardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CF6BBE68709C820F2BA353D /* CardStore.swift */; };
 		41218CA46CEDD3C477933AF3 /* CardFlipGestureModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25D53C5C13C4C9A6F7080E01 /* CardFlipGestureModifier.swift */; };
 		4648A3A5D3F5E2F876E8C976 /* AutoCaptureScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22A52EE835F13EAFAE213A87 /* AutoCaptureScanner.swift */; };
@@ -25,6 +26,7 @@
 		83DF1E439B7C955DB49C03C9 /* CardFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 363F2E49D010D98F78204A95 /* CardFormView.swift */; };
 		8B3C9BF1161BCECD7DC8DF1B /* FullScreenCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A4B7C21AE45C4C73B7E25F8 /* FullScreenCardView.swift */; };
 		8EF79C608ED1D91CF554A8AC /* CameraPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6E9DD45B48C6C2BF1893C7D /* CameraPreviewView.swift */; };
+		956226EEE089A20422F8A829 /* ContinuationResumer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59D317442EBA785DF54CA81F /* ContinuationResumer.swift */; };
 		98395919BEB03BD673222FCA /* CameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B813C3D1CC0EB2607E044B82 /* CameraManager.swift */; };
 		99F042D9710FADF40EE34075 /* CardFormToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 444653DD3B39947262593A62 /* CardFormToolbar.swift */; };
 		9EBDDED8EE67BDBD1D5C8F4A /* CardDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA8700A2B56FE6A7857C4B71 /* CardDetailView.swift */; };
@@ -50,7 +52,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		02EA035424376E198064C6C4 /* WalletTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WalletTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		02EA035424376E198064C6C4 /* WalletTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = WalletTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0CF6BBE68709C820F2BA353D /* CardStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardStore.swift; sourceTree = "<group>"; };
 		0DA4455E1E667FB2ECB157E5 /* CardImagesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardImagesSection.swift; sourceTree = "<group>"; };
 		176642AC28ECBF018D825A39 /* CardImageState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardImageState.swift; sourceTree = "<group>"; };
@@ -67,6 +69,7 @@
 		542E70E5A9DB9228F9B0830A /* ScannerOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerOverlay.swift; sourceTree = "<group>"; };
 		54AB96E420A6B19A4884EF58 /* Wallet.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Wallet.entitlements; sourceTree = "<group>"; };
 		5535878A8999DA792296D9FF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		59D317442EBA785DF54CA81F /* ContinuationResumer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContinuationResumer.swift; sourceTree = "<group>"; };
 		64E555060DBBA21957883DA7 /* CardListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardListView.swift; sourceTree = "<group>"; };
 		6727E4D906687B7789F493E5 /* CardActionMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardActionMenu.swift; sourceTree = "<group>"; };
 		68B44C14EC06F1E56C3D941A /* OCRExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCRExtractor.swift; sourceTree = "<group>"; };
@@ -74,13 +77,14 @@
 		9A4B7C21AE45C4C73B7E25F8 /* FullScreenCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenCardView.swift; sourceTree = "<group>"; };
 		B813C3D1CC0EB2607E044B82 /* CameraManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraManager.swift; sourceTree = "<group>"; };
 		BC3D48818093E241D9AD9D12 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
+		BED43B9F6D4CCF24D3385A2C /* DocumentScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentScannerView.swift; sourceTree = "<group>"; };
 		D05F70390E060D4BA9CF5F86 /* WalletCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletCardView.swift; sourceTree = "<group>"; };
 		D2F57D986500652E7184F2E7 /* ImageEnhancer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageEnhancer.swift; sourceTree = "<group>"; };
 		DB0924876ACC2CF3565FA131 /* CardStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardStoreTests.swift; sourceTree = "<group>"; };
 		E6E9DD45B48C6C2BF1893C7D /* CameraPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreviewView.swift; sourceTree = "<group>"; };
 		E9521967964621AA6FFAB924 /* ScannerOverlayModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerOverlayModifier.swift; sourceTree = "<group>"; };
 		EA8700A2B56FE6A7857C4B71 /* CardDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDetailView.swift; sourceTree = "<group>"; };
-		EF8855F2C58459BCFD012811 /* Wallet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Wallet.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EF8855F2C58459BCFD012811 /* Wallet.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Wallet.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F9314A4606DD40FB63D062AD /* Persistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Persistence.swift; sourceTree = "<group>"; };
 		F9E1F05831E04A3A3C4EC2A3 /* CardImageProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardImageProcessor.swift; sourceTree = "<group>"; };
 		FC62403B132ADD2B50590C4B /* Card.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Card.swift; sourceTree = "<group>"; };
@@ -122,6 +126,7 @@
 				50300A6AB9CECE957BAE5380 /* CardImagePickerButton.swift */,
 				0DA4455E1E667FB2ECB157E5 /* CardImagesSection.swift */,
 				40DC516F694F9AAEC6AB9D98 /* CardPhotoPickerModifier.swift */,
+				BED43B9F6D4CCF24D3385A2C /* DocumentScannerView.swift */,
 				4E1BCE25844903F13DDA2128 /* FlippableCardView.swift */,
 				542E70E5A9DB9228F9B0830A /* ScannerOverlay.swift */,
 				E9521967964621AA6FFAB924 /* ScannerOverlayModifier.swift */,
@@ -154,6 +159,7 @@
 				45C21C23390F434397E46C83 /* AppLogger.swift */,
 				B813C3D1CC0EB2607E044B82 /* CameraManager.swift */,
 				F9E1F05831E04A3A3C4EC2A3 /* CardImageProcessor.swift */,
+				59D317442EBA785DF54CA81F /* ContinuationResumer.swift */,
 				D2F57D986500652E7184F2E7 /* ImageEnhancer.swift */,
 				68B44C14EC06F1E56C3D941A /* OCRExtractor.swift */,
 			);
@@ -245,7 +251,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2620;
+				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					3E9AE74EDD54BAB2ED9DD8A3 = {
 						DevelopmentTeam = 3JXY2MS2Y3;
@@ -253,7 +259,6 @@
 				};
 			};
 			buildConfigurationList = FEF6A6D9D4E79DE56D138875 /* Build configuration list for PBXProject "Wallet" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -262,6 +267,8 @@
 			);
 			mainGroup = F2FE0AEC85C2099DBF9B0AA4;
 			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = F6C5876EF20585B7A996AF7D /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -313,6 +320,8 @@
 				2027E9A872089AE9BE69106D /* CardPhotoPickerModifier.swift in Sources */,
 				3B023DC1BEF530E78FDB20DC /* CardStore.swift in Sources */,
 				BE655780D69F31706DCFEFF6 /* Constants.swift in Sources */,
+				956226EEE089A20422F8A829 /* ContinuationResumer.swift in Sources */,
+				2E5378738A82B3242C7A6342 /* DocumentScannerView.swift in Sources */,
 				CB648D4C69CE18D3E93BFA72 /* FlippableCardView.swift in Sources */,
 				8B3C9BF1161BCECD7DC8DF1B /* FullScreenCardView.swift in Sources */,
 				AA456C3D7562970BC2E6CA35 /* ImageEnhancer.swift in Sources */,
@@ -411,7 +420,6 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -426,7 +434,6 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.9;
@@ -487,7 +494,6 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -509,7 +515,6 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.9;
