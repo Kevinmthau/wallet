@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -251,7 +251,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2640;
+				LastUpgradeCheck = 1500;
 				TargetAttributes = {
 					3E9AE74EDD54BAB2ED9DD8A3 = {
 						DevelopmentTeam = 3JXY2MS2Y3;
@@ -259,6 +259,7 @@
 				};
 			};
 			buildConfigurationList = FEF6A6D9D4E79DE56D138875 /* Build configuration list for PBXProject "Wallet" */;
+			compatibilityVersion = "Xcode 15.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -267,7 +268,6 @@
 			);
 			mainGroup = F2FE0AEC85C2099DBF9B0AA4;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			productRefGroup = F6C5876EF20585B7A996AF7D /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
