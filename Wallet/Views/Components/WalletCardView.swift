@@ -72,11 +72,13 @@ struct WalletCardView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
         }
         .task(id: imageLoadIdentifier) {
-            thumbnailImage = await CardImageRepository.shared.image(
+            let image = await CardImageRepository.shared.image(
                 for: card,
                 side: .front,
                 variant: .thumbnail
             )
+            guard !Task.isCancelled else { return }
+            thumbnailImage = image
         }
     }
 

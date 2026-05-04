@@ -204,6 +204,20 @@ final class CardStoreTests: XCTestCase {
         XCTAssertNil(card.notes)
     }
 
+    func testSetExistingImagesPreservesChangedSides() throws {
+        let state = CardImageState()
+        state.removeImage(for: .front, isEditMode: true)
+
+        let existingFront = makeImage(width: 600, height: 400, color: .blue)
+        let existingBack = makeImage(width: 600, height: 400, color: .red)
+        state.setExistingImages(front: existingFront, back: existingBack)
+
+        XCTAssertNil(state.frontImage)
+        XCTAssertTrue(state.frontChanged)
+        XCTAssertTrue(state.backImage === existingBack)
+        XCTAssertFalse(state.backChanged)
+    }
+
     func testMarkAccessedUpdatesTimestampImmediately() async throws {
         let addSuccess = await store.addCard(
             name: "Access Test",

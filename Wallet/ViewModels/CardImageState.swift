@@ -169,10 +169,12 @@ class CardImageState {
     }
 
     func setExistingImages(front: UIImage?, back: UIImage?) {
-        frontImage = front
-        backImage = back
-        frontChanged = false
-        backChanged = false
+        if !frontChanged {
+            frontImage = front
+        }
+        if !backChanged {
+            backImage = back
+        }
     }
 
     // MARK: - OCR Text Collection
