@@ -409,6 +409,55 @@ final class CardStoreTests: XCTestCase {
         }
     }
 
+    func testTimestampMergePolicyKeepsNewestAccessWhenEditTimestampTies() throws {
+        let storeURL = makeTemporaryStoreURL()
+        do {
+            let editTimestamp = Date(timeIntervalSince1970: 10_000)
+            let seedingPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let objectURI = try seedConflictTestCard(
+                in: seedingPersistence.container.viewContext,
+                timestamp: editTimestamp
+            )
+            .uriRepresentation()
+
+            let firstAccessPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let secondAccessPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let verificationPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let firstAccessObjectID = try resolveObjectID(from: objectURI, in: firstAccessPersistence)
+            let secondAccessObjectID = try resolveObjectID(from: objectURI, in: secondAccessPersistence)
+            let verificationObjectID = try resolveObjectID(from: objectURI, in: verificationPersistence)
+            let firstAccessContext = firstAccessPersistence.makeBackgroundContext()
+            let secondAccessContext = secondAccessPersistence.makeBackgroundContext()
+            let firstAccessTimestamp = editTimestamp.addingTimeInterval(10)
+            let secondAccessTimestamp = editTimestamp.addingTimeInterval(20)
+
+            try performAndWait(in: firstAccessContext) {
+                let card = try XCTUnwrap(try firstAccessContext.existingObject(with: firstAccessObjectID) as? Card)
+                card.updateLastAccessed(at: firstAccessTimestamp)
+            }
+
+            try performAndWait(in: secondAccessContext) {
+                let card = try XCTUnwrap(try secondAccessContext.existingObject(with: secondAccessObjectID) as? Card)
+                card.updateLastAccessed(at: secondAccessTimestamp)
+            }
+
+            try performAndWait(in: firstAccessContext) {
+                try firstAccessContext.save()
+            }
+
+            try performAndWait(in: secondAccessContext) {
+                try secondAccessContext.save()
+            }
+
+            let verificationContext = verificationPersistence.makeBackgroundContext()
+            try performAndWait(in: verificationContext) {
+                let card = try XCTUnwrap(try verificationContext.existingObject(with: verificationObjectID) as? Card)
+                XCTAssertEqual(try XCTUnwrap(card.lastAccessedAt), secondAccessTimestamp)
+                XCTAssertEqual(try XCTUnwrap(card.updatedAt), editTimestamp)
+            }
+        }
+    }
+
     func testCardStackLayoutUsesPreferredSpacingWhenContentFits() {
         let layout = CardStackLayout(
             cardCount: 4,
@@ -447,8 +496,10 @@ final class CardStoreTests: XCTestCase {
         }
     }
 
-    private func seedConflictTestCard(in context: NSManagedObjectContext) throws -> NSManagedObjectID {
-        let timestamp = Date()
+    private func seedConflictTestCard(
+        in context: NSManagedObjectContext,
+        timestamp: Date = Date()
+    ) throws -> NSManagedObjectID {
         let card = Card.insert(into: context)
         card.id = UUID()
         card.name = "Conflict Card"

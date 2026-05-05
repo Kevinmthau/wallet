@@ -257,11 +257,16 @@ final class CardTimestampMergePolicy: NSMergePolicy {
     override func resolve(mergeConflicts list: [Any]) throws {
         var objectTrumpConflicts: [Any] = []
         var storeTrumpConflicts: [Any] = []
+        var accessTimestampRestorations: [(object: NSManagedObject, timestamp: Date)] = []
 
         for item in list {
             guard let conflict = item as? NSMergeConflict else {
                 objectTrumpConflicts.append(item)
                 continue
+            }
+
+            if let latestAccessTimestamp = latestAccessTimestamp(for: conflict) {
+                accessTimestampRestorations.append((conflict.sourceObject, latestAccessTimestamp))
             }
 
             switch winner(for: conflict) {
@@ -279,6 +284,8 @@ final class CardTimestampMergePolicy: NSMergePolicy {
         if !objectTrumpConflicts.isEmpty {
             try objectTrumpPolicy.resolve(mergeConflicts: objectTrumpConflicts)
         }
+
+        restoreAccessTimestamps(accessTimestampRestorations)
     }
 
     private enum ConflictWinner {
@@ -287,6 +294,7 @@ final class CardTimestampMergePolicy: NSMergePolicy {
     }
 
     private let localTimestampKey: String
+    private let accessTimestampKey = Card.Attributes.lastAccessedAt
 
     private func winner(for conflict: NSMergeConflict) -> ConflictWinner {
         let objectTimestamp = timestamp(in: conflict.sourceObject)
@@ -306,11 +314,45 @@ final class CardTimestampMergePolicy: NSMergePolicy {
         }
     }
 
+    private func latestAccessTimestamp(for conflict: NSMergeConflict) -> Date? {
+        guard conflict.sourceObject.entity.propertiesByName[accessTimestampKey] != nil else {
+            return nil
+        }
+
+        return [
+            timestamp(in: conflict.sourceObject, key: accessTimestampKey),
+            timestamp(in: conflict.objectSnapshot, key: accessTimestampKey),
+            timestamp(in: conflict.cachedSnapshot, key: accessTimestampKey),
+            timestamp(in: conflict.persistedSnapshot, key: accessTimestampKey)
+        ]
+        .compactMap { $0 }
+        .max()
+    }
+
+    private func restoreAccessTimestamps(
+        _ restorations: [(object: NSManagedObject, timestamp: Date)]
+    ) {
+        for (object, timestamp) in restorations where !object.isDeleted {
+            let currentTimestamp = self.timestamp(in: object, key: accessTimestampKey)
+            if currentTimestamp.map({ timestamp > $0 }) ?? true {
+                object.setValue(timestamp, forKey: accessTimestampKey)
+            }
+        }
+    }
+
     private func timestamp(in object: NSManagedObject?) -> Date? {
-        object?.value(forKey: localTimestampKey) as? Date
+        timestamp(in: object, key: localTimestampKey)
     }
 
     private func timestamp(in snapshot: [String: Any]?) -> Date? {
-        snapshot?[localTimestampKey] as? Date
+        timestamp(in: snapshot, key: localTimestampKey)
+    }
+
+    private func timestamp(in object: NSManagedObject?, key: String) -> Date? {
+        object?.value(forKey: key) as? Date
+    }
+
+    private func timestamp(in snapshot: [String: Any]?, key: String) -> Date? {
+        snapshot?[key] as? Date
     }
 }
