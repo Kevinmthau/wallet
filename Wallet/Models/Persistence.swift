@@ -65,6 +65,14 @@ struct PersistenceController {
         // Define attributes
         // Note: id is set dynamically when adding cards - not here
         // Setting UUID() here would create ONE UUID shared by all cards (evaluated once at model init)
+        func optionalDateAttribute(named name: String) -> NSAttributeDescription {
+            let attribute = NSAttributeDescription()
+            attribute.name = name
+            attribute.attributeType = .dateAttributeType
+            attribute.isOptional = true
+            return attribute
+        }
+
         let idAttribute = NSAttributeDescription()
         idAttribute.name = "id"
         idAttribute.attributeType = .UUIDAttributeType
@@ -123,6 +131,13 @@ struct PersistenceController {
         updatedAtAttribute.attributeType = .dateAttributeType
         updatedAtAttribute.isOptional = true
 
+        let nameUpdatedAtAttribute = optionalDateAttribute(named: Card.Attributes.nameUpdatedAt)
+        let categoryUpdatedAtAttribute = optionalDateAttribute(named: Card.Attributes.categoryUpdatedAt)
+        let notesUpdatedAtAttribute = optionalDateAttribute(named: Card.Attributes.notesUpdatedAt)
+        let isFavoriteUpdatedAtAttribute = optionalDateAttribute(named: Card.Attributes.isFavoriteUpdatedAt)
+        let frontImageUpdatedAtAttribute = optionalDateAttribute(named: Card.Attributes.frontImageUpdatedAt)
+        let backImageUpdatedAtAttribute = optionalDateAttribute(named: Card.Attributes.backImageUpdatedAt)
+
         cardEntity.properties = [
             idAttribute,
             nameAttribute,
@@ -133,7 +148,13 @@ struct PersistenceController {
             isFavoriteAttribute,
             createdAtAttribute,
             lastAccessedAttribute,
-            updatedAtAttribute
+            updatedAtAttribute,
+            nameUpdatedAtAttribute,
+            categoryUpdatedAtAttribute,
+            notesUpdatedAtAttribute,
+            isFavoriteUpdatedAtAttribute,
+            frontImageUpdatedAtAttribute,
+            backImageUpdatedAtAttribute
         ]
 
         model.entities = [cardEntity]
@@ -206,6 +227,7 @@ struct PersistenceController {
             card.createdAt = referenceDate
             card.lastAccessedAt = referenceDate
             card.updatedAt = referenceDate
+            card.markAllMutableFieldsUpdated(at: referenceDate)
         }
 
         try? context.save()
@@ -249,7 +271,9 @@ final class CardTimestampMergePolicy: NSMergePolicy {
         Card.Attributes.categoryRaw,
         Card.Attributes.notes,
         Card.Attributes.isFavorite,
-        Card.Attributes.createdAt,
+        Card.Attributes.createdAt
+    ]
+    private let updatedAtResolvedKeys = [
         Card.Attributes.updatedAt
     ]
     private let imageDataKeys = [
@@ -328,12 +352,16 @@ final class CardTimestampMergePolicy: NSMergePolicy {
         let storeValue: Any?
         let localChanged: Bool
         let storeChanged: Bool
+        let localVersion: Date?
+        let storeVersion: Date?
     }
 
     private struct ResolvedField {
         let key: String
         let value: Any?
         let storeValue: Any?
+        let fieldVersion: Date?
+        let storeFieldVersion: Date?
     }
 
     private func canResolveByField(_ conflict: NSMergeConflict) -> Bool {
@@ -348,18 +376,43 @@ final class CardTimestampMergePolicy: NSMergePolicy {
     }
 
     private func resolveFields(for conflict: NSMergeConflict) -> [ResolvedField] {
-        resolveIndependentFields(for: conflict) + resolveImageFields(for: conflict)
+        resolveIndependentFields(for: conflict)
+            + resolveImageFields(for: conflict)
+            + resolveUpdatedAtField(for: conflict)
     }
 
     private func resolveIndependentFields(for conflict: NSMergeConflict) -> [ResolvedField] {
         independentlyResolvedKeys.map { key in
             let change = fieldChange(for: key, in: conflict)
             let resolvedValue = resolvedValue(for: change, in: conflict)
+            let resolvedFieldVersion = resolvedFieldVersion(for: change, in: conflict)
+            setResolvedValue(resolvedValue, forKey: key, on: conflict.sourceObject)
+            setResolvedFieldVersion(
+                resolvedFieldVersion,
+                forKey: key,
+                on: conflict.sourceObject
+            )
+            return ResolvedField(
+                key: key,
+                value: resolvedValue,
+                storeValue: change.storeValue,
+                fieldVersion: resolvedFieldVersion,
+                storeFieldVersion: change.storeVersion
+            )
+        }
+    }
+
+    private func resolveUpdatedAtField(for conflict: NSMergeConflict) -> [ResolvedField] {
+        updatedAtResolvedKeys.map { key in
+            let change = fieldChange(for: key, in: conflict)
+            let resolvedValue = resolvedValue(for: change, in: conflict)
             setResolvedValue(resolvedValue, forKey: key, on: conflict.sourceObject)
             return ResolvedField(
                 key: key,
                 value: resolvedValue,
-                storeValue: change.storeValue
+                storeValue: change.storeValue,
+                fieldVersion: nil,
+                storeFieldVersion: nil
             )
         }
     }
@@ -371,17 +424,20 @@ final class CardTimestampMergePolicy: NSMergePolicy {
         }
 
         if hasSameSideImageConflict {
-            let imageWinner = winner(for: conflict)
+            let imageWinner = winner(forImageChanges: imageChanges, in: conflict)
             return imageChanges.map { change in
                 let resolvedValue: Any?
                 let changedFromValue: Any?
+                let resolvedFieldVersion: Date?
                 switch imageWinner {
                 case .object:
                     resolvedValue = change.localValue
                     changedFromValue = change.storeValue
+                    resolvedFieldVersion = change.localVersion
                 case .store:
                     resolvedValue = change.storeValue
                     changedFromValue = nil
+                    resolvedFieldVersion = change.storeVersion
                 }
                 setResolvedValue(
                     resolvedValue,
@@ -390,20 +446,37 @@ final class CardTimestampMergePolicy: NSMergePolicy {
                     changedFrom: changedFromValue,
                     forceChange: imageWinner == .object && change.storeChanged
                 )
+                setResolvedFieldVersion(
+                    resolvedFieldVersion,
+                    forKey: change.key,
+                    on: conflict.sourceObject,
+                    changedFrom: imageWinner == .object ? change.storeVersion : nil,
+                    forceChange: imageWinner == .object && change.storeChanged
+                )
                 return ResolvedField(
                     key: change.key,
                     value: resolvedValue,
-                    storeValue: change.storeValue
+                    storeValue: change.storeValue,
+                    fieldVersion: resolvedFieldVersion,
+                    storeFieldVersion: change.storeVersion
                 )
             }
         } else {
             return imageChanges.map { change in
                 let resolvedValue = resolvedValue(for: change, in: conflict)
+                let resolvedFieldVersion = resolvedFieldVersion(for: change, in: conflict)
                 setResolvedValue(resolvedValue, forKey: change.key, on: conflict.sourceObject)
+                setResolvedFieldVersion(
+                    resolvedFieldVersion,
+                    forKey: change.key,
+                    on: conflict.sourceObject
+                )
                 return ResolvedField(
                     key: change.key,
                     value: resolvedValue,
-                    storeValue: change.storeValue
+                    storeValue: change.storeValue,
+                    fieldVersion: resolvedFieldVersion,
+                    storeFieldVersion: change.storeVersion
                 )
             }
         }
@@ -413,20 +486,37 @@ final class CardTimestampMergePolicy: NSMergePolicy {
         let localValue = value(in: conflict.sourceObject, key: key)
         let storeValue = value(in: conflict.persistedSnapshot, key: key)
         let baseValue = value(in: conflict.cachedSnapshot, key: key)
+        let localChanged = !valuesAreEqual(localValue, baseValue)
+        let storeChanged = !valuesAreEqual(storeValue, baseValue)
+        let baseVersion = fieldVersion(forKey: key, in: conflict.cachedSnapshot)
+        let localVersion = effectiveFieldVersion(
+            fieldVersion(forKey: key, in: conflict.sourceObject),
+            baseVersion: baseVersion,
+            fieldChanged: localChanged,
+            fallbackVersion: objectTimestamp(for: conflict)
+        )
+        let storeVersion = effectiveFieldVersion(
+            fieldVersion(forKey: key, in: conflict.persistedSnapshot),
+            baseVersion: baseVersion,
+            fieldChanged: storeChanged,
+            fallbackVersion: timestamp(in: conflict.persistedSnapshot)
+        )
 
         return FieldChange(
             key: key,
             localValue: localValue,
             storeValue: storeValue,
-            localChanged: !valuesAreEqual(localValue, baseValue),
-            storeChanged: !valuesAreEqual(storeValue, baseValue)
+            localChanged: localChanged,
+            storeChanged: storeChanged,
+            localVersion: localVersion,
+            storeVersion: storeVersion
         )
     }
 
     private func resolvedValue(for change: FieldChange, in conflict: NSMergeConflict) -> Any? {
         switch (change.localChanged, change.storeChanged) {
         case (true, true):
-            switch winner(for: conflict) {
+            switch winner(for: change, in: conflict) {
             case .object:
                 return change.localValue
             case .store:
@@ -438,6 +528,24 @@ final class CardTimestampMergePolicy: NSMergePolicy {
             return change.storeValue
         case (false, false):
             return change.localValue
+        }
+    }
+
+    private func resolvedFieldVersion(for change: FieldChange, in conflict: NSMergeConflict) -> Date? {
+        switch (change.localChanged, change.storeChanged) {
+        case (true, true):
+            switch winner(for: change, in: conflict) {
+            case .object:
+                return change.localVersion
+            case .store:
+                return change.storeVersion
+            }
+        case (true, false):
+            return change.localVersion
+        case (false, true):
+            return change.storeVersion
+        case (false, false):
+            return [change.localVersion, change.storeVersion].compactMap { $0 }.max()
         }
     }
 
@@ -473,12 +581,52 @@ final class CardTimestampMergePolicy: NSMergePolicy {
         }
     }
 
-    private func winner(for conflict: NSMergeConflict) -> ConflictWinner {
-        let objectTimestamp = timestamp(in: conflict.sourceObject)
-            ?? timestamp(in: conflict.objectSnapshot)
-            ?? timestamp(in: conflict.cachedSnapshot)
-        let storeTimestamp = timestamp(in: conflict.persistedSnapshot)
+    private func setResolvedFieldVersion(
+        _ resolvedVersion: Date?,
+        forKey key: String,
+        on object: NSManagedObject,
+        changedFrom previousVersion: Date? = nil,
+        forceChange: Bool = false
+    ) {
+        guard let versionKey = Card.Attributes.timestampKeyByMutableField[key] else { return }
+        setResolvedValue(
+            resolvedVersion,
+            forKey: versionKey,
+            on: object,
+            changedFrom: previousVersion,
+            forceChange: forceChange
+        )
+    }
 
+    private func winner(for conflict: NSMergeConflict) -> ConflictWinner {
+        winner(
+            objectTimestamp: objectTimestamp(for: conflict),
+            storeTimestamp: timestamp(in: conflict.persistedSnapshot)
+        )
+    }
+
+    private func winner(for change: FieldChange, in conflict: NSMergeConflict) -> ConflictWinner {
+        winner(
+            objectTimestamp: change.localVersion ?? objectTimestamp(for: conflict),
+            storeTimestamp: change.storeVersion ?? timestamp(in: conflict.persistedSnapshot)
+        )
+    }
+
+    private func winner(forImageChanges changes: [FieldChange], in conflict: NSMergeConflict) -> ConflictWinner {
+        let conflictingChanges = changes.filter { $0.localChanged && $0.storeChanged }
+        return winner(
+            objectTimestamp: conflictingChanges
+                .compactMap { $0.localVersion }
+                .max()
+                ?? objectTimestamp(for: conflict),
+            storeTimestamp: conflictingChanges
+                .compactMap { $0.storeVersion }
+                .max()
+                ?? timestamp(in: conflict.persistedSnapshot)
+        )
+    }
+
+    private func winner(objectTimestamp: Date?, storeTimestamp: Date?) -> ConflictWinner {
         switch (objectTimestamp, storeTimestamp) {
         case let (objectTimestamp?, storeTimestamp?):
             return objectTimestamp > storeTimestamp ? .object : .store
@@ -489,6 +637,12 @@ final class CardTimestampMergePolicy: NSMergePolicy {
         case (nil, nil):
             return .object
         }
+    }
+
+    private func objectTimestamp(for conflict: NSMergeConflict) -> Date? {
+        timestamp(in: conflict.objectSnapshot)
+            ?? timestamp(in: conflict.sourceObject)
+            ?? timestamp(in: conflict.cachedSnapshot)
     }
 
     private func latestAccessTimestamp(for conflict: NSMergeConflict) -> Date? {
@@ -529,6 +683,13 @@ final class CardTimestampMergePolicy: NSMergePolicy {
                     changedFrom: field.storeValue,
                     forceChange: !valuesAreEqual(field.value, field.storeValue)
                 )
+                setResolvedFieldVersion(
+                    field.fieldVersion,
+                    forKey: field.key,
+                    on: object,
+                    changedFrom: field.storeFieldVersion,
+                    forceChange: !valuesAreEqual(field.fieldVersion, field.storeFieldVersion)
+                )
             }
         }
     }
@@ -547,6 +708,29 @@ final class CardTimestampMergePolicy: NSMergePolicy {
 
     private func timestamp(in snapshot: [String: Any]?, key: String) -> Date? {
         normalizedValue(snapshot?[key]) as? Date
+    }
+
+    private func fieldVersion(forKey key: String, in object: NSManagedObject?) -> Date? {
+        guard let versionKey = Card.Attributes.timestampKeyByMutableField[key] else { return nil }
+        return timestamp(in: object, key: versionKey)
+    }
+
+    private func fieldVersion(forKey key: String, in snapshot: [String: Any]?) -> Date? {
+        guard let versionKey = Card.Attributes.timestampKeyByMutableField[key] else { return nil }
+        return timestamp(in: snapshot, key: versionKey)
+    }
+
+    private func effectiveFieldVersion(
+        _ fieldVersion: Date?,
+        baseVersion: Date?,
+        fieldChanged: Bool,
+        fallbackVersion: Date?
+    ) -> Date? {
+        if fieldChanged,
+           (fieldVersion == nil || valuesAreEqual(fieldVersion, baseVersion)) {
+            return fallbackVersion ?? fieldVersion
+        }
+        return fieldVersion ?? fallbackVersion
     }
 
     private func value(in object: NSManagedObject, key: String) -> Any? {

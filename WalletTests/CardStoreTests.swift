@@ -161,6 +161,38 @@ final class CardStoreTests: XCTestCase {
         XCTAssertFalse(firstImage === secondImage)
     }
 
+    func testImageLoadIdentifierChangesWhenImageVersionChanges() throws {
+        let timestamp = Date(timeIntervalSince1970: 2_000)
+        let card = Card.insert(into: context)
+        card.id = UUID()
+        card.name = "Versioned Image"
+        card.category = .membership
+        card.frontImageData = Data([0x01])
+        card.isFavorite = false
+        card.createdAt = timestamp
+        card.lastAccessedAt = timestamp
+        card.updatedAt = timestamp
+        card.markAllMutableFieldsUpdated(at: timestamp)
+
+        let firstIdentifier = CardImageRepository.shared.loadIdentifier(
+            for: card,
+            side: .front,
+            variant: .display
+        )
+
+        card.frontImageData = Data([0x02])
+        card.markFieldUpdated(Card.Attributes.frontImageData, at: timestamp.addingTimeInterval(10))
+
+        let secondIdentifier = CardImageRepository.shared.loadIdentifier(
+            for: card,
+            side: .front,
+            variant: .display
+        )
+
+        XCTAssertNotEqual(firstIdentifier, secondIdentifier)
+        XCTAssertEqual(card.updatedAt, timestamp)
+    }
+
     func testUpdateCardCanClearBackImage() async throws {
         let front = makeImage(width: 600, height: 400, color: .green)
         let back = makeImage(width: 600, height: 400, color: .yellow)
@@ -309,6 +341,8 @@ final class CardStoreTests: XCTestCase {
         let refreshedCard = try XCTUnwrap(fetchCards().first(where: { $0.name == "Legacy Card" }))
         XCTAssertNotNil(refreshedCard.id)
         XCTAssertEqual(try XCTUnwrap(refreshedCard.updatedAt), originalAccessDate)
+        XCTAssertEqual(try XCTUnwrap(refreshedCard.nameUpdatedAt), originalAccessDate)
+        XCTAssertEqual(try XCTUnwrap(refreshedCard.frontImageUpdatedAt), originalAccessDate)
     }
 
     func testInMemoryPersistenceDisablesCloudKit() {
@@ -337,12 +371,14 @@ final class CardStoreTests: XCTestCase {
                 let card = try XCTUnwrap(try newerContext.existingObject(with: newerObjectID) as? Card)
                 card.name = "Store Wins"
                 card.updatedAt = newerTimestamp
+                card.markFieldUpdated(Card.Attributes.name, at: newerTimestamp)
             }
 
             try performAndWait(in: olderContext) {
                 let card = try XCTUnwrap(try olderContext.existingObject(with: olderObjectID) as? Card)
                 card.name = "Stale Update"
                 card.updatedAt = olderTimestamp
+                card.markFieldUpdated(Card.Attributes.name, at: olderTimestamp)
             }
 
             try performAndWait(in: newerContext) {
@@ -384,12 +420,14 @@ final class CardStoreTests: XCTestCase {
                 let card = try XCTUnwrap(try olderContext.existingObject(with: olderObjectID) as? Card)
                 card.name = "Older Update"
                 card.updatedAt = olderTimestamp
+                card.markFieldUpdated(Card.Attributes.name, at: olderTimestamp)
             }
 
             try performAndWait(in: newerContext) {
                 let card = try XCTUnwrap(try newerContext.existingObject(with: newerObjectID) as? Card)
                 card.name = "Local Wins"
                 card.updatedAt = newerTimestamp
+                card.markFieldUpdated(Card.Attributes.name, at: newerTimestamp)
             }
 
             try performAndWait(in: olderContext) {
@@ -480,12 +518,14 @@ final class CardStoreTests: XCTestCase {
                 let card = try XCTUnwrap(try notesContext.existingObject(with: notesObjectID) as? Card)
                 card.notes = "Synced notes"
                 card.updatedAt = notesTimestamp
+                card.markFieldUpdated(Card.Attributes.notes, at: notesTimestamp)
             }
 
             try performAndWait(in: favoriteContext) {
                 let card = try XCTUnwrap(try favoriteContext.existingObject(with: favoriteObjectID) as? Card)
                 card.isFavorite = true
                 card.updatedAt = favoriteTimestamp
+                card.markFieldUpdated(Card.Attributes.isFavorite, at: favoriteTimestamp)
             }
 
             try performAndWait(in: notesContext) {
@@ -502,6 +542,77 @@ final class CardStoreTests: XCTestCase {
                 XCTAssertEqual(card.notes, "Synced notes")
                 XCTAssertTrue(card.isFavorite)
                 XCTAssertEqual(try XCTUnwrap(card.updatedAt), favoriteTimestamp)
+            }
+        }
+    }
+
+    func testMergePolicyUsesFieldVersionsAfterNonOverlappingMerge() throws {
+        let storeURL = makeTemporaryStoreURL()
+        do {
+            let baseTimestamp = Date(timeIntervalSince1970: 10_000)
+            let firstNotesTimestamp = baseTimestamp.addingTimeInterval(20)
+            let laterNotesTimestamp = baseTimestamp.addingTimeInterval(25)
+            let favoriteTimestamp = baseTimestamp.addingTimeInterval(30)
+            let seedingPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let objectURI = try seedConflictTestCard(
+                in: seedingPersistence.container.viewContext,
+                timestamp: baseTimestamp
+            )
+            .uriRepresentation()
+
+            let firstNotesPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let favoritePersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let laterNotesPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let verificationPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let firstNotesObjectID = try resolveObjectID(from: objectURI, in: firstNotesPersistence)
+            let favoriteObjectID = try resolveObjectID(from: objectURI, in: favoritePersistence)
+            let laterNotesObjectID = try resolveObjectID(from: objectURI, in: laterNotesPersistence)
+            let verificationObjectID = try resolveObjectID(from: objectURI, in: verificationPersistence)
+            let firstNotesContext = firstNotesPersistence.makeBackgroundContext()
+            let favoriteContext = favoritePersistence.makeBackgroundContext()
+            let laterNotesContext = laterNotesPersistence.makeBackgroundContext()
+
+            try performAndWait(in: firstNotesContext) {
+                let card = try XCTUnwrap(try firstNotesContext.existingObject(with: firstNotesObjectID) as? Card)
+                card.notes = "First notes"
+                card.updatedAt = firstNotesTimestamp
+                card.markFieldUpdated(Card.Attributes.notes, at: firstNotesTimestamp)
+            }
+
+            try performAndWait(in: favoriteContext) {
+                let card = try XCTUnwrap(try favoriteContext.existingObject(with: favoriteObjectID) as? Card)
+                card.isFavorite = true
+                card.updatedAt = favoriteTimestamp
+                card.markFieldUpdated(Card.Attributes.isFavorite, at: favoriteTimestamp)
+            }
+
+            try performAndWait(in: laterNotesContext) {
+                let card = try XCTUnwrap(try laterNotesContext.existingObject(with: laterNotesObjectID) as? Card)
+                card.notes = "Later notes"
+                card.updatedAt = laterNotesTimestamp
+                card.markFieldUpdated(Card.Attributes.notes, at: laterNotesTimestamp)
+            }
+
+            try performAndWait(in: firstNotesContext) {
+                try firstNotesContext.save()
+            }
+
+            try performAndWait(in: favoriteContext) {
+                try favoriteContext.save()
+            }
+
+            try performAndWait(in: laterNotesContext) {
+                try laterNotesContext.save()
+            }
+
+            let verificationContext = verificationPersistence.makeBackgroundContext()
+            try performAndWait(in: verificationContext) {
+                let card = try XCTUnwrap(try verificationContext.existingObject(with: verificationObjectID) as? Card)
+                XCTAssertEqual(card.notes, "Later notes")
+                XCTAssertTrue(card.isFavorite)
+                XCTAssertEqual(try XCTUnwrap(card.updatedAt), favoriteTimestamp)
+                XCTAssertEqual(try XCTUnwrap(card.notesUpdatedAt), laterNotesTimestamp)
+                XCTAssertEqual(try XCTUnwrap(card.isFavoriteUpdatedAt), favoriteTimestamp)
             }
         }
     }
@@ -532,12 +643,14 @@ final class CardStoreTests: XCTestCase {
                 let card = try XCTUnwrap(try frontContext.existingObject(with: frontObjectID) as? Card)
                 card.frontImageData = Data([0x03])
                 card.updatedAt = frontTimestamp
+                card.markFieldUpdated(Card.Attributes.frontImageData, at: frontTimestamp)
             }
 
             try performAndWait(in: backContext) {
                 let card = try XCTUnwrap(try backContext.existingObject(with: backObjectID) as? Card)
                 card.backImageData = Data([0x04])
                 card.updatedAt = backTimestamp
+                card.markFieldUpdated(Card.Attributes.backImageData, at: backTimestamp)
             }
 
             try performAndWait(in: frontContext) {
@@ -585,12 +698,15 @@ final class CardStoreTests: XCTestCase {
                 card.frontImageData = Data([0x03])
                 card.backImageData = Data([0x04])
                 card.updatedAt = storeImageTimestamp
+                card.markFieldUpdated(Card.Attributes.frontImageData, at: storeImageTimestamp)
+                card.markFieldUpdated(Card.Attributes.backImageData, at: storeImageTimestamp)
             }
 
             try performAndWait(in: localImageContext) {
                 let card = try XCTUnwrap(try localImageContext.existingObject(with: localImageObjectID) as? Card)
                 card.frontImageData = Data([0x05])
                 card.updatedAt = localImageTimestamp
+                card.markFieldUpdated(Card.Attributes.frontImageData, at: localImageTimestamp)
             }
 
             try performAndWait(in: storeImageContext) {
@@ -665,6 +781,7 @@ final class CardStoreTests: XCTestCase {
         card.createdAt = timestamp
         card.lastAccessedAt = timestamp
         card.updatedAt = timestamp
+        card.markAllMutableFieldsUpdated(at: timestamp)
 
         try context.save()
         return card.objectID
@@ -720,6 +837,7 @@ final class CardStoreTests: XCTestCase {
         card.createdAt = lastAccessedAt
         card.lastAccessedAt = lastAccessedAt
         card.updatedAt = updatedAt
+        card.markAllMutableFieldsUpdated(at: updatedAt)
 
         try context.save()
         return card

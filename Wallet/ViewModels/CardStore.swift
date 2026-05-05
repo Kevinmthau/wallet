@@ -49,6 +49,7 @@ class CardStore {
             card.createdAt = mutationDate
             card.lastAccessedAt = mutationDate
             card.updatedAt = mutationDate
+            card.markAllMutableFieldsUpdated(at: mutationDate)
             return save()
         } catch {
             lastError = error
@@ -108,22 +109,29 @@ class CardStore {
 
             if let name {
                 card.name = name
+                card.markFieldUpdated(Card.Attributes.name, at: mutationDate)
             }
             if let category {
                 card.category = category
+                card.markFieldUpdated(Card.Attributes.categoryRaw, at: mutationDate)
             }
             if let processedFrontImage = try await processedFrontImage {
                 card.frontImageData = processedFrontImage
+                card.markFieldUpdated(Card.Attributes.frontImageData, at: mutationDate)
             }
             if clearBackImage {
                 card.backImageData = nil
+                card.markFieldUpdated(Card.Attributes.backImageData, at: mutationDate)
             } else if let processedBackImage = try await processedBackImage {
                 card.backImageData = processedBackImage
+                card.markFieldUpdated(Card.Attributes.backImageData, at: mutationDate)
             }
             if clearNotes {
                 card.notes = nil
+                card.markFieldUpdated(Card.Attributes.notes, at: mutationDate)
             } else if let notes {
                 card.notes = notes
+                card.markFieldUpdated(Card.Attributes.notes, at: mutationDate)
             }
 
             card.touchUpdatedAt(mutationDate)
@@ -198,22 +206,27 @@ class CardStore {
     /// Backfills IDs/timestamps for legacy records so identity and conflict resolution stay stable.
     private func backfillLegacyMetadata() {
         let request = Card.makeFetchRequest()
+        let missingFieldTimestampPredicates = Card.Attributes.mutableFieldTimestampKeys.map {
+            NSPredicate(format: "\($0) == nil")
+        }
         request.predicate = NSCompoundPredicate(orPredicateWithSubpredicates: [
             NSPredicate(format: "\(Card.Attributes.id) == nil"),
             NSPredicate(format: "\(Card.Attributes.updatedAt) == nil")
-        ])
+        ] + missingFieldTimestampPredicates)
 
         do {
             let legacyCards = try context.fetch(request)
             guard !legacyCards.isEmpty else { return }
 
             for card in legacyCards {
+                let referenceDate = card.updatedAt ?? card.lastAccessedAt ?? card.createdAt ?? Date()
                 if card.id == nil {
                     card.id = UUID()
                 }
                 if card.updatedAt == nil {
-                    card.updatedAt = card.lastAccessedAt ?? card.createdAt ?? Date()
+                    card.updatedAt = referenceDate
                 }
+                card.backfillMissingMutableFieldTimestamps(at: referenceDate)
             }
 
             AppLogger.data.info("CardStore: Backfilling metadata for \(legacyCards.count) cards")

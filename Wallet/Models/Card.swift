@@ -64,6 +64,30 @@ public class Card: NSManagedObject, Identifiable {
         static let createdAt = "createdAt"
         static let lastAccessedAt = "lastAccessedAt"
         static let updatedAt = "updatedAt"
+        static let nameUpdatedAt = "nameUpdatedAt"
+        static let categoryUpdatedAt = "categoryUpdatedAt"
+        static let notesUpdatedAt = "notesUpdatedAt"
+        static let isFavoriteUpdatedAt = "isFavoriteUpdatedAt"
+        static let frontImageUpdatedAt = "frontImageUpdatedAt"
+        static let backImageUpdatedAt = "backImageUpdatedAt"
+
+        static let mutableFieldTimestampKeys = [
+            nameUpdatedAt,
+            categoryUpdatedAt,
+            notesUpdatedAt,
+            isFavoriteUpdatedAt,
+            frontImageUpdatedAt,
+            backImageUpdatedAt
+        ]
+
+        static let timestampKeyByMutableField = [
+            name: nameUpdatedAt,
+            categoryRaw: categoryUpdatedAt,
+            notes: notesUpdatedAt,
+            isFavorite: isFavoriteUpdatedAt,
+            frontImageData: frontImageUpdatedAt,
+            backImageData: backImageUpdatedAt
+        ]
     }
 
     @NSManaged public var id: UUID?
@@ -76,6 +100,12 @@ public class Card: NSManagedObject, Identifiable {
     @NSManaged public var createdAt: Date?
     @NSManaged public var lastAccessedAt: Date?
     @NSManaged public var updatedAt: Date?
+    @NSManaged public var nameUpdatedAt: Date?
+    @NSManaged public var categoryUpdatedAt: Date?
+    @NSManaged public var notesUpdatedAt: Date?
+    @NSManaged public var isFavoriteUpdatedAt: Date?
+    @NSManaged public var frontImageUpdatedAt: Date?
+    @NSManaged public var backImageUpdatedAt: Date?
 
     static func makeFetchRequest() -> NSFetchRequest<Card> {
         NSFetchRequest<Card>(entityName: Attributes.entityName)
@@ -122,6 +152,30 @@ extension Card {
 
     func toggleFavorite(at date: Date = Date()) {
         isFavorite.toggle()
+        markFieldUpdated(Card.Attributes.isFavorite, at: date)
         updatedAt = date
+    }
+
+    func markFieldUpdated(_ fieldKey: String, at date: Date) {
+        guard let timestampKey = Card.Attributes.timestampKeyByMutableField[fieldKey],
+              entity.propertiesByName[timestampKey] != nil else {
+            return
+        }
+        setValue(date, forKey: timestampKey)
+    }
+
+    func markAllMutableFieldsUpdated(at date: Date) {
+        for timestampKey in Card.Attributes.mutableFieldTimestampKeys
+            where entity.propertiesByName[timestampKey] != nil {
+            setValue(date, forKey: timestampKey)
+        }
+    }
+
+    func backfillMissingMutableFieldTimestamps(at date: Date) {
+        for timestampKey in Card.Attributes.mutableFieldTimestampKeys
+            where entity.propertiesByName[timestampKey] != nil
+                && value(forKey: timestampKey) == nil {
+            setValue(date, forKey: timestampKey)
+        }
     }
 }

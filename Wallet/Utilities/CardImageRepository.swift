@@ -60,7 +60,11 @@ final class CardImageRepository: @unchecked Sendable {
         variant: CardImageVariant
     ) -> String {
         let updatedAt = card.updatedAt?.timeIntervalSinceReferenceDate ?? 0
-        return "\(card.stableId)-\(side.rawValue)-\(variant.rawValue)-\(updatedAt)-\(card.hasBack)"
+        let imageVersion = card.imageUpdatedAt(for: side)?.timeIntervalSinceReferenceDate
+        let imageIdentity = imageVersion.map { String($0) }
+            ?? card.imageData(for: side).map(Self.dataFingerprint(for:))
+            ?? "nil"
+        return "\(card.stableId)-\(side.rawValue)-\(variant.rawValue)-\(updatedAt)-\(imageIdentity)-\(card.hasBack)"
     }
 
     func image(
@@ -216,6 +220,15 @@ extension Card {
             return frontImageData
         case .back:
             return backImageData
+        }
+    }
+
+    func imageUpdatedAt(for side: CardImageSide) -> Date? {
+        switch side {
+        case .front:
+            return frontImageUpdatedAt
+        case .back:
+            return backImageUpdatedAt
         }
     }
 }
