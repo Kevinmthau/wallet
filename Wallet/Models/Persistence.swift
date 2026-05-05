@@ -425,11 +425,21 @@ final class CardTimestampMergePolicy: NSMergePolicy {
 
         if hasSameSideImageConflict {
             let imageWinner = winner(forImageChanges: imageChanges, in: conflict)
+            let imageWinnerVersion = version(
+                forImageChanges: imageChanges,
+                winner: imageWinner,
+                in: conflict
+            )
             return imageChanges.map { change in
+                let fieldWinner = winner(
+                    forImageChange: change,
+                    defaultWinner: imageWinner,
+                    defaultWinnerVersion: imageWinnerVersion
+                )
                 let resolvedValue: Any?
                 let changedFromValue: Any?
                 let resolvedFieldVersion: Date?
-                switch imageWinner {
+                switch fieldWinner {
                 case .object:
                     resolvedValue = change.localValue
                     changedFromValue = change.storeValue
@@ -444,14 +454,14 @@ final class CardTimestampMergePolicy: NSMergePolicy {
                     forKey: change.key,
                     on: conflict.sourceObject,
                     changedFrom: changedFromValue,
-                    forceChange: imageWinner == .object && change.storeChanged
+                    forceChange: fieldWinner == .object && change.storeChanged
                 )
                 setResolvedFieldVersion(
                     resolvedFieldVersion,
                     forKey: change.key,
                     on: conflict.sourceObject,
-                    changedFrom: imageWinner == .object ? change.storeVersion : nil,
-                    forceChange: imageWinner == .object && change.storeChanged
+                    changedFrom: fieldWinner == .object ? change.storeVersion : nil,
+                    forceChange: fieldWinner == .object && change.storeChanged
                 )
                 return ResolvedField(
                     key: change.key,
@@ -612,6 +622,28 @@ final class CardTimestampMergePolicy: NSMergePolicy {
         )
     }
 
+    private func winner(
+        forImageChange change: FieldChange,
+        defaultWinner: ConflictWinner,
+        defaultWinnerVersion: Date?
+    ) -> ConflictWinner {
+        guard change.localChanged != change.storeChanged else {
+            return defaultWinner
+        }
+
+        let changedSideWinner: ConflictWinner = change.localChanged ? .object : .store
+        let changedSideVersion = change.localChanged ? change.localVersion : change.storeVersion
+
+        switch (changedSideVersion, defaultWinnerVersion) {
+        case let (changedSideVersion?, defaultWinnerVersion?):
+            return changedSideVersion > defaultWinnerVersion ? changedSideWinner : defaultWinner
+        case (.some, nil):
+            return changedSideWinner
+        case (nil, _):
+            return defaultWinner
+        }
+    }
+
     private func winner(forImageChanges changes: [FieldChange], in conflict: NSMergeConflict) -> ConflictWinner {
         let conflictingChanges = changes.filter { $0.localChanged && $0.storeChanged }
         return winner(
@@ -624,6 +656,26 @@ final class CardTimestampMergePolicy: NSMergePolicy {
                 .max()
                 ?? timestamp(in: conflict.persistedSnapshot)
         )
+    }
+
+    private func version(
+        forImageChanges changes: [FieldChange],
+        winner: ConflictWinner,
+        in conflict: NSMergeConflict
+    ) -> Date? {
+        let conflictingChanges = changes.filter { $0.localChanged && $0.storeChanged }
+        switch winner {
+        case .object:
+            return conflictingChanges
+                .compactMap { $0.localVersion }
+                .max()
+                ?? objectTimestamp(for: conflict)
+        case .store:
+            return conflictingChanges
+                .compactMap { $0.storeVersion }
+                .max()
+                ?? timestamp(in: conflict.persistedSnapshot)
+        }
     }
 
     private func winner(objectTimestamp: Date?, storeTimestamp: Date?) -> ConflictWinner {

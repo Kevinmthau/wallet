@@ -727,6 +727,65 @@ final class CardStoreTests: XCTestCase {
         }
     }
 
+    func testMergePolicyPreservesNewerNonConflictingImageEditDuringSameSideConflict() throws {
+        let storeURL = makeTemporaryStoreURL()
+        do {
+            let seedingPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let objectURI = try seedConflictTestCard(
+                in: seedingPersistence.container.viewContext,
+                frontImageData: Data([0x01]),
+                backImageData: Data([0x02])
+            )
+            .uriRepresentation()
+
+            let storeImagePersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let localImagePersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let verificationPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+            let storeImageObjectID = try resolveObjectID(from: objectURI, in: storeImagePersistence)
+            let localImageObjectID = try resolveObjectID(from: objectURI, in: localImagePersistence)
+            let verificationObjectID = try resolveObjectID(from: objectURI, in: verificationPersistence)
+            let storeImageContext = storeImagePersistence.makeBackgroundContext()
+            let localImageContext = localImagePersistence.makeBackgroundContext()
+            let storeFrontTimestamp = Date().addingTimeInterval(10)
+            let localFrontTimestamp = Date().addingTimeInterval(50)
+            let storeBackTimestamp = Date().addingTimeInterval(100)
+
+            try performAndWait(in: localImageContext) {
+                let card = try XCTUnwrap(try localImageContext.existingObject(with: localImageObjectID) as? Card)
+                card.frontImageData = Data([0x05])
+                card.updatedAt = localFrontTimestamp
+                card.markFieldUpdated(Card.Attributes.frontImageData, at: localFrontTimestamp)
+            }
+
+            try performAndWait(in: storeImageContext) {
+                let card = try XCTUnwrap(try storeImageContext.existingObject(with: storeImageObjectID) as? Card)
+                card.frontImageData = Data([0x03])
+                card.updatedAt = storeFrontTimestamp
+                card.markFieldUpdated(Card.Attributes.frontImageData, at: storeFrontTimestamp)
+                try storeImageContext.save()
+
+                card.backImageData = nil
+                card.updatedAt = storeBackTimestamp
+                card.markFieldUpdated(Card.Attributes.backImageData, at: storeBackTimestamp)
+                try storeImageContext.save()
+            }
+
+            try performAndWait(in: localImageContext) {
+                try localImageContext.save()
+            }
+
+            let verificationContext = verificationPersistence.makeBackgroundContext()
+            try performAndWait(in: verificationContext) {
+                let card = try XCTUnwrap(try verificationContext.existingObject(with: verificationObjectID) as? Card)
+                XCTAssertEqual(card.frontImageData, Data([0x05]))
+                XCTAssertNil(card.backImageData)
+                XCTAssertEqual(try XCTUnwrap(card.updatedAt), storeBackTimestamp)
+                XCTAssertEqual(try XCTUnwrap(card.frontImageUpdatedAt), localFrontTimestamp)
+                XCTAssertEqual(try XCTUnwrap(card.backImageUpdatedAt), storeBackTimestamp)
+            }
+        }
+    }
+
     func testCardStackLayoutUsesPreferredSpacingWhenContentFits() {
         let layout = CardStackLayout(
             cardCount: 4,
