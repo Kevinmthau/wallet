@@ -262,7 +262,6 @@ class CardStore {
             guard repairedCount > 0 else { return 0 }
 
             AppLogger.data.info("CardStore: Repairing back image metadata for \(repairedCount) cards")
-            _ = save()
             return repairedCount
         } catch {
             AppLogger.data.error("CardStore.repairBackImagePresence failed: \(error.localizedDescription)")
@@ -274,17 +273,21 @@ class CardStore {
         hasBackImage: Bool,
         predicate: NSPredicate
     ) throws -> Int {
-        let request = Card.makeFetchRequest()
+        let request = NSBatchUpdateRequest(entityName: Card.Attributes.entityName)
         request.predicate = predicate
-        request.fetchBatchSize = 100
-        request.includesPropertyValues = false
-        request.returnsObjectsAsFaults = true
+        request.propertiesToUpdate = [Card.Attributes.hasBackImage: hasBackImage]
+        request.resultType = .updatedObjectIDsResultType
 
-        let cards = try context.fetch(request)
-        for card in cards {
-            card.hasBackImage = hasBackImage
+        guard let result = try context.execute(request) as? NSBatchUpdateResult,
+              let objectIDs = result.result as? [NSManagedObjectID] else {
+            return 0
         }
-        return cards.count
+
+        NSManagedObjectContext.mergeChanges(
+            fromRemoteContextSave: [NSUpdatedObjectsKey: objectIDs],
+            into: [context]
+        )
+        return objectIDs.count
     }
 
     private func observeRemoteChanges() {
