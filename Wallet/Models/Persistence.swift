@@ -102,6 +102,12 @@ struct PersistenceController {
         backImageAttribute.isOptional = true
         backImageAttribute.allowsExternalBinaryDataStorage = true
 
+        let hasBackImageAttribute = NSAttributeDescription()
+        hasBackImageAttribute.name = "hasBackImage"
+        hasBackImageAttribute.attributeType = .booleanAttributeType
+        hasBackImageAttribute.isOptional = false
+        hasBackImageAttribute.defaultValue = false
+
         let notesAttribute = NSAttributeDescription()
         notesAttribute.name = "notes"
         notesAttribute.attributeType = .stringAttributeType
@@ -144,6 +150,7 @@ struct PersistenceController {
             categoryAttribute,
             frontImageAttribute,
             backImageAttribute,
+            hasBackImageAttribute,
             notesAttribute,
             isFavoriteAttribute,
             createdAtAttribute,
@@ -223,6 +230,7 @@ struct PersistenceController {
             card.id = UUID()
             card.name = name
             card.category = sampleCategories[index]
+            card.hasBackImage = false
             card.isFavorite = index == 0
             card.createdAt = referenceDate
             card.lastAccessedAt = referenceDate
@@ -423,6 +431,7 @@ final class CardTimestampMergePolicy: NSMergePolicy {
             change.localChanged && change.storeChanged
         }
 
+        let resolvedFields: [ResolvedField]
         if hasSameSideImageConflict {
             let imageWinner = winner(forImageChanges: imageChanges, in: conflict)
             let imageWinnerVersion = version(
@@ -430,7 +439,7 @@ final class CardTimestampMergePolicy: NSMergePolicy {
                 winner: imageWinner,
                 in: conflict
             )
-            return imageChanges.map { change in
+            resolvedFields = imageChanges.map { change in
                 let fieldWinner = winner(
                     forImageChange: change,
                     defaultWinner: imageWinner,
@@ -472,7 +481,7 @@ final class CardTimestampMergePolicy: NSMergePolicy {
                 )
             }
         } else {
-            return imageChanges.map { change in
+            resolvedFields = imageChanges.map { change in
                 let resolvedValue = resolvedValue(for: change, in: conflict)
                 let resolvedFieldVersion = resolvedFieldVersion(for: change, in: conflict)
                 setResolvedValue(resolvedValue, forKey: change.key, on: conflict.sourceObject)
@@ -490,6 +499,27 @@ final class CardTimestampMergePolicy: NSMergePolicy {
                 )
             }
         }
+
+        return resolvedFields + [resolveBackImagePresence(from: resolvedFields, in: conflict)]
+    }
+
+    private func resolveBackImagePresence(
+        from resolvedImageFields: [ResolvedField],
+        in conflict: NSMergeConflict
+    ) -> ResolvedField {
+        let resolvedBackImageData = resolvedImageFields
+            .first { $0.key == Card.Attributes.backImageData }?
+            .value
+        let hasBackImage = resolvedBackImageData != nil
+        let storeValue = value(in: conflict.persistedSnapshot, key: Card.Attributes.hasBackImage)
+        setResolvedValue(hasBackImage, forKey: Card.Attributes.hasBackImage, on: conflict.sourceObject)
+        return ResolvedField(
+            key: Card.Attributes.hasBackImage,
+            value: hasBackImage,
+            storeValue: storeValue,
+            fieldVersion: nil,
+            storeFieldVersion: nil
+        )
     }
 
     private func fieldChange(for key: String, in conflict: NSMergeConflict) -> FieldChange {

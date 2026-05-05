@@ -17,7 +17,7 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
 | HD-001 | P0 | Done | Codex | CloudKit/Core Data | Prevent access tracking from winning edit conflicts |
 | HD-002 | P0 | Done | Codex | CloudKit/Core Data | Replace whole-object timestamp conflict resolution |
 | HD-003 | P0 | Done | Codex | Card mutations | Avoid partial inserted cards when image processing fails |
-| HD-004 | P1 | Not Started | Unassigned | Images/List UI | Reduce list decode pressure and main-actor binary reads |
+| HD-004 | P1 | Done | Codex | Images/List UI | Reduce list decode pressure and main-actor binary reads |
 | HD-005 | P1 | Not Started | Unassigned | Images/Memory | Stop holding full-resolution images longer than needed |
 | HD-006 | P1 | Not Started | Unassigned | Images/OCR | Make image and OCR work bounded and cancellable |
 | HD-007 | P2 | Not Started | Unassigned | Core Data/UI actions | Use object IDs for delayed and async card actions |
@@ -81,8 +81,8 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
 
 ### HD-004: Reduce List Decode Pressure and Main-Actor Binary Reads
 
-- Status: `Not Started`
-- Owner: Unassigned
+- Status: `Done`
+- Owner: Codex
 - Target files: `Wallet/Views/CardListView.swift`, `Wallet/Views/Components/WalletCardView.swift`, `Wallet/Utilities/CardImageRepository.swift`
 - Problem: the card list materializes all fetched cards, renders all card views in a `ZStack`, and each row reads binary image data from Core Data on the main actor before background decoding.
 - Intended fix: load images by `NSManagedObjectID` on a background context and introduce a persistent or cached thumbnail path so the list does not read/decode full image blobs for every visible card.
@@ -93,6 +93,8 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
   - Tests or instrumentation verify thumbnail cache invalidation when image data changes.
 - Notes:
   - Consider persisted thumbnail data if CloudKit/storage behavior is acceptable; otherwise use background downsample plus bounded in-memory cache.
+  - 2026-05-05: Started remaining HD-004 work. Existing thumbnail/display/full variants and downsampling are already present; current focus is objectID-based background-context thumbnail reads and gating image work for compressed stack rows.
+  - 2026-05-05: Implemented objectID-based thumbnail reads on a private Core Data context, added `hasBackImage` metadata so list rows do not touch back-image blobs for the dual-sided indicator/filter, and gated thumbnail loading for compressed stack rows. Verified with `./scripts/test.sh` on iOS Simulator `id=9AA5D33C-B1CA-46A6-A1FC-C0E1EE7F7B63`; 29 tests passed.
 
 ### HD-005: Stop Holding Full-Resolution Images Longer Than Needed
 

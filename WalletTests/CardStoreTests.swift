@@ -49,6 +49,7 @@ final class CardStoreTests: XCTestCase {
         XCTAssertNotNil(card.updatedAt)
         XCTAssertNotNil(card.frontImageData)
         XCTAssertNotNil(card.backImageData)
+        XCTAssertTrue(card.hasBack)
 
         let savedFrontData = try XCTUnwrap(card.frontImageData)
         let savedFrontImage = try XCTUnwrap(UIImage(data: savedFrontData))
@@ -178,6 +179,84 @@ final class CardStoreTests: XCTestCase {
         XCTAssertFalse(firstImage === secondImage)
     }
 
+    func testImageRepositoryLoadsObjectIDThumbnailFromPersistentStore() async throws {
+        let data = try CardImageProcessor.compressForStorage(
+            makeImage(width: 5000, height: 2500, color: .blue)
+        )
+        let timestamp = Date()
+        let card = Card.insert(into: context)
+        card.id = UUID()
+        card.name = "Stored Image"
+        card.category = .membership
+        card.frontImageData = data
+        card.hasBackImage = false
+        card.isFavorite = false
+        card.createdAt = timestamp
+        card.lastAccessedAt = timestamp
+        card.updatedAt = timestamp
+        card.markAllMutableFieldsUpdated(at: timestamp)
+        try context.save()
+
+        let loadedImage = await CardImageRepository.shared.image(
+            for: card.objectID,
+            side: .front,
+            variant: .thumbnail,
+            in: context
+        )
+        let thumbnail = try XCTUnwrap(loadedImage)
+
+        XCTAssertLessThanOrEqual(
+            max(thumbnail.pixelSize.width, thumbnail.pixelSize.height),
+            Constants.CardLayout.listThumbnailMaxDimension
+        )
+    }
+
+    func testImageRepositoryObjectIDThumbnailInvalidatesWhenImageDataChanges() async throws {
+        let firstData = try CardImageProcessor.compressForStorage(
+            makeImage(width: 1200, height: 800, color: .red)
+        )
+        let secondData = try CardImageProcessor.compressForStorage(
+            makeImage(width: 1200, height: 800, color: .blue)
+        )
+        let timestamp = Date()
+        let card = Card.insert(into: context)
+        card.id = UUID()
+        card.name = "Changing Image"
+        card.category = .membership
+        card.frontImageData = firstData
+        card.hasBackImage = false
+        card.isFavorite = false
+        card.createdAt = timestamp
+        card.lastAccessedAt = timestamp
+        card.updatedAt = timestamp
+        card.markAllMutableFieldsUpdated(at: timestamp)
+        try context.save()
+
+        let loadedFirstImage = await CardImageRepository.shared.image(
+            for: card.objectID,
+            side: .front,
+            variant: .thumbnail,
+            in: context
+        )
+
+        let mutationDate = timestamp.addingTimeInterval(10)
+        card.frontImageData = secondData
+        card.markFieldUpdated(Card.Attributes.frontImageData, at: mutationDate)
+        card.touchUpdatedAt(mutationDate)
+        try context.save()
+
+        let loadedSecondImage = await CardImageRepository.shared.image(
+            for: card.objectID,
+            side: .front,
+            variant: .thumbnail,
+            in: context
+        )
+        let firstImage = try XCTUnwrap(loadedFirstImage)
+        let secondImage = try XCTUnwrap(loadedSecondImage)
+
+        XCTAssertFalse(firstImage === secondImage)
+    }
+
     func testImageLoadIdentifierChangesWhenImageVersionChanges() throws {
         let timestamp = Date(timeIntervalSince1970: 2_000)
         let card = Card.insert(into: context)
@@ -185,6 +264,7 @@ final class CardStoreTests: XCTestCase {
         card.name = "Versioned Image"
         card.category = .membership
         card.frontImageData = Data([0x01])
+        card.hasBackImage = false
         card.isFavorite = false
         card.createdAt = timestamp
         card.lastAccessedAt = timestamp
@@ -224,11 +304,13 @@ final class CardStoreTests: XCTestCase {
 
         let card = try XCTUnwrap(fetchCards().first)
         XCTAssertNotNil(card.backImageData)
+        XCTAssertTrue(card.hasBack)
 
         let updateSuccess = await store.updateCard(card, clearBackImage: true)
         XCTAssertTrue(updateSuccess)
 
         XCTAssertNil(card.backImageData)
+        XCTAssertFalse(card.hasBack)
     }
 
     func testUpdateCardCanClearNotes() async throws {
@@ -346,6 +428,7 @@ final class CardStoreTests: XCTestCase {
         card.id = nil
         card.name = "Legacy Card"
         card.category = .other
+        card.hasBackImage = false
         card.isFavorite = false
         card.createdAt = Date().addingTimeInterval(-3600)
         card.lastAccessedAt = originalAccessDate
@@ -683,6 +766,7 @@ final class CardStoreTests: XCTestCase {
                 let card = try XCTUnwrap(try verificationContext.existingObject(with: verificationObjectID) as? Card)
                 XCTAssertEqual(card.frontImageData, Data([0x03]))
                 XCTAssertEqual(card.backImageData, Data([0x04]))
+                XCTAssertTrue(card.hasBack)
                 XCTAssertEqual(try XCTUnwrap(card.updatedAt), backTimestamp)
             }
         }
@@ -739,6 +823,7 @@ final class CardStoreTests: XCTestCase {
                 let card = try XCTUnwrap(try verificationContext.existingObject(with: verificationObjectID) as? Card)
                 XCTAssertEqual(card.frontImageData, Data([0x05]))
                 XCTAssertEqual(card.backImageData, Data([0x02]))
+                XCTAssertTrue(card.hasBack)
                 XCTAssertEqual(try XCTUnwrap(card.updatedAt), localImageTimestamp)
             }
         }
@@ -796,6 +881,7 @@ final class CardStoreTests: XCTestCase {
                 let card = try XCTUnwrap(try verificationContext.existingObject(with: verificationObjectID) as? Card)
                 XCTAssertEqual(card.frontImageData, Data([0x05]))
                 XCTAssertNil(card.backImageData)
+                XCTAssertFalse(card.hasBack)
                 XCTAssertEqual(try XCTUnwrap(card.updatedAt), storeBackTimestamp)
                 XCTAssertEqual(try XCTUnwrap(card.frontImageUpdatedAt), localFrontTimestamp)
                 XCTAssertEqual(try XCTUnwrap(card.backImageUpdatedAt), storeBackTimestamp)
@@ -841,6 +927,18 @@ final class CardStoreTests: XCTestCase {
         }
     }
 
+    func testCardStackItemLoadsThumbnailsOnlyWhenMeaningfullyVisible() {
+        XCTAssertTrue(CardStackItem.shouldLoadThumbnail(isFrontCard: true, visibleHeight: 1))
+        XCTAssertTrue(CardStackItem.shouldLoadThumbnail(
+            isFrontCard: false,
+            visibleHeight: Constants.CardLayout.minimumThumbnailVisibleHeight
+        ))
+        XCTAssertFalse(CardStackItem.shouldLoadThumbnail(
+            isFrontCard: false,
+            visibleHeight: Constants.CardLayout.minimumThumbnailVisibleHeight - 1
+        ))
+    }
+
     private func seedConflictTestCard(
         in context: NSManagedObjectContext,
         timestamp: Date = Date(),
@@ -853,6 +951,7 @@ final class CardStoreTests: XCTestCase {
         card.category = .membership
         card.frontImageData = frontImageData
         card.backImageData = backImageData
+        card.hasBackImage = backImageData != nil
         card.isFavorite = false
         card.createdAt = timestamp
         card.lastAccessedAt = timestamp
@@ -909,6 +1008,7 @@ final class CardStoreTests: XCTestCase {
         card.id = UUID()
         card.name = name
         card.category = .membership
+        card.hasBackImage = false
         card.isFavorite = false
         card.createdAt = lastAccessedAt
         card.lastAccessedAt = lastAccessedAt

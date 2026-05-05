@@ -409,7 +409,7 @@ struct CardListView: View {
         case .favorites:
             predicates.append(NSPredicate(format: "\(Card.Attributes.isFavorite) == YES"))
         case .withBack:
-            predicates.append(NSPredicate(format: "\(Card.Attributes.backImageData) != nil"))
+            predicates.append(NSPredicate(format: "\(Card.Attributes.hasBackImage) == YES"))
         case .category:
             predicates.append(NSPredicate(format: "\(Card.Attributes.categoryRaw) == %@", selectedCategory.rawValue))
         }
@@ -518,7 +518,13 @@ struct CardStackItem: View {
     let onFavoriteToggle: () -> Void
 
     var body: some View {
-        WalletCardView(card: card)
+        WalletCardView(
+            card: card,
+            shouldLoadThumbnail: Self.shouldLoadThumbnail(
+                isFrontCard: isFrontCard,
+                visibleHeight: visibleHeight
+            )
+        )
             .frame(height: cardHeight)
             .padding(.horizontal, 16)
             .contentShape(VisibleCardShape(isFrontCard: isFrontCard, visibleHeight: visibleHeight))
@@ -542,6 +548,10 @@ struct CardStackItem: View {
                 x: 0,
                 y: 4
             )
+    }
+
+    static func shouldLoadThumbnail(isFrontCard: Bool, visibleHeight: CGFloat) -> Bool {
+        isFrontCard || visibleHeight >= Constants.CardLayout.minimumThumbnailVisibleHeight
     }
 }
 

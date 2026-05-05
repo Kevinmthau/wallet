@@ -21,6 +21,9 @@ enum Constants {
         /// Max pixel size used for list thumbnails to reduce decode/memory pressure
         static let listThumbnailMaxDimension: CGFloat = 720
 
+        /// Minimum visible card strip height before loading a thumbnail in the compressed stack
+        static let minimumThumbnailVisibleHeight: CGFloat = 44
+
         /// Max pixel size used for detail/fullscreen card renders
         static let displayImageMaxDimension: CGFloat = 2200
 

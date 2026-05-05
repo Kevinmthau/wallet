@@ -1,12 +1,24 @@
 import SwiftUI
 
 struct WalletCardView: View {
+    @Environment(\.managedObjectContext) private var managedObjectContext
+
     let card: Card
+    let shouldLoadThumbnail: Bool
 
     @State private var thumbnailImage: UIImage?
 
+    init(card: Card, shouldLoadThumbnail: Bool = true) {
+        self.card = card
+        self.shouldLoadThumbnail = shouldLoadThumbnail
+    }
+
     private var imageLoadIdentifier: String {
-        CardImageRepository.shared.loadIdentifier(
+        guard shouldLoadThumbnail else {
+            return "\(card.stableId)-front-thumbnail-disabled"
+        }
+
+        return CardImageRepository.shared.loadIdentifier(
             for: card,
             side: .front,
             variant: .thumbnail
@@ -72,10 +84,16 @@ struct WalletCardView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
         }
         .task(id: imageLoadIdentifier) {
+            guard shouldLoadThumbnail else {
+                thumbnailImage = nil
+                return
+            }
+
             let image = await CardImageRepository.shared.image(
-                for: card,
+                for: card.objectID,
                 side: .front,
-                variant: .thumbnail
+                variant: .thumbnail,
+                in: managedObjectContext
             )
             guard !Task.isCancelled else { return }
             thumbnailImage = image

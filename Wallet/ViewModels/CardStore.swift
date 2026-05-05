@@ -46,6 +46,7 @@ class CardStore {
             card.category = category
             card.frontImageData = frontImageData
             card.backImageData = backImageData
+            card.hasBackImage = backImageData != nil
             card.notes = notes
             card.isFavorite = false
             card.createdAt = mutationDate
@@ -123,9 +124,11 @@ class CardStore {
             }
             if clearBackImage {
                 card.backImageData = nil
+                card.hasBackImage = false
                 card.markFieldUpdated(Card.Attributes.backImageData, at: mutationDate)
             } else if let processedBackImage = try await processedBackImage {
                 card.backImageData = processedBackImage
+                card.hasBackImage = true
                 card.markFieldUpdated(Card.Attributes.backImageData, at: mutationDate)
             }
             if clearNotes {
@@ -211,10 +214,13 @@ class CardStore {
         let missingFieldTimestampPredicates = Card.Attributes.mutableFieldTimestampKeys.map {
             NSPredicate(format: "\($0) == nil")
         }
+        let backImagePresencePredicate = NSPredicate(
+            format: "(\(Card.Attributes.backImageData) != nil AND \(Card.Attributes.hasBackImage) == NO) OR (\(Card.Attributes.backImageData) == nil AND \(Card.Attributes.hasBackImage) == YES)"
+        )
         request.predicate = NSCompoundPredicate(orPredicateWithSubpredicates: [
             NSPredicate(format: "\(Card.Attributes.id) == nil"),
             NSPredicate(format: "\(Card.Attributes.updatedAt) == nil")
-        ] + missingFieldTimestampPredicates)
+        ] + missingFieldTimestampPredicates + [backImagePresencePredicate])
 
         do {
             let legacyCards = try context.fetch(request)
@@ -228,6 +234,7 @@ class CardStore {
                 if card.updatedAt == nil {
                     card.updatedAt = referenceDate
                 }
+                card.hasBackImage = card.backImageData != nil
                 card.backfillMissingMutableFieldTimestamps(at: referenceDate)
             }
 

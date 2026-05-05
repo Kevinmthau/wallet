@@ -1,5 +1,6 @@
 import UIKit
 import ImageIO
+import CoreData
 @preconcurrency import Dispatch
 
 enum CardImageSide: String, Sendable {
@@ -26,6 +27,12 @@ enum CardImageVariant: String, Sendable {
 
 final class CardImageRepository: @unchecked Sendable {
     static let shared = CardImageRepository()
+
+    private struct LoadedImageData: Sendable {
+        let data: Data
+        let cacheIdentity: String
+        let dataFingerprint: String
+    }
 
     private let fullImageCache = ImageCache(costLimit: 96 * 1024 * 1024)
     private let displayImageCache = ImageCache(costLimit: 96 * 1024 * 1024)
@@ -54,17 +61,40 @@ final class CardImageRepository: @unchecked Sendable {
         )
     }
 
+    @MainActor
+    func image(
+        for objectID: NSManagedObjectID,
+        side: CardImageSide,
+        variant: CardImageVariant,
+        in sourceContext: NSManagedObjectContext
+    ) async -> UIImage? {
+        guard let persistentStoreCoordinator = sourceContext.persistentStoreCoordinator,
+              let loadedImageData = await loadImageData(
+                for: objectID,
+                side: side,
+                persistentStoreCoordinator: persistentStoreCoordinator
+              ) else {
+            return nil
+        }
+
+        return await image(
+            from: loadedImageData.data,
+            cacheIdentity: loadedImageData.cacheIdentity,
+            side: side,
+            variant: variant,
+            dataFingerprint: loadedImageData.dataFingerprint
+        )
+    }
+
     func loadIdentifier(
         for card: Card,
         side: CardImageSide,
         variant: CardImageVariant
     ) -> String {
-        let updatedAt = card.updatedAt?.timeIntervalSinceReferenceDate ?? 0
         let imageVersion = card.imageUpdatedAt(for: side)?.timeIntervalSinceReferenceDate
-        let imageIdentity = imageVersion.map { String($0) }
-            ?? card.imageData(for: side).map(Self.dataFingerprint(for:))
-            ?? "nil"
-        return "\(card.stableId)-\(side.rawValue)-\(variant.rawValue)-\(updatedAt)-\(imageIdentity)-\(card.hasBack)"
+        let fallbackVersion = card.updatedAt?.timeIntervalSinceReferenceDate ?? 0
+        let imageIdentity = imageVersion.map { String($0) } ?? "fallback-\(fallbackVersion)"
+        return "\(card.stableId)-\(card.objectID.uriRepresentation().absoluteString)-\(side.rawValue)-\(variant.rawValue)-\(imageIdentity)"
     }
 
     func image(
@@ -73,11 +103,27 @@ final class CardImageRepository: @unchecked Sendable {
         side: CardImageSide,
         variant: CardImageVariant
     ) async -> UIImage? {
+        await image(
+            from: data,
+            cacheIdentity: cacheIdentity,
+            side: side,
+            variant: variant,
+            dataFingerprint: Self.dataFingerprint(for: data)
+        )
+    }
+
+    private func image(
+        from data: Data,
+        cacheIdentity: String,
+        side: CardImageSide,
+        variant: CardImageVariant,
+        dataFingerprint: String
+    ) async -> UIImage? {
         let key = cacheKey(
             cacheIdentity: cacheIdentity,
             side: side,
             variant: variant,
-            data: data
+            dataFingerprint: dataFingerprint
         )
         let cache = cache(for: variant)
 
@@ -147,9 +193,44 @@ final class CardImageRepository: @unchecked Sendable {
         cacheIdentity: String,
         side: CardImageSide,
         variant: CardImageVariant,
-        data: Data
+        dataFingerprint: String
     ) -> String {
-        "\(cacheIdentity)-\(side.rawValue)-\(variant.rawValue)-\(Self.dataFingerprint(for: data))"
+        "\(cacheIdentity)-\(side.rawValue)-\(variant.rawValue)-\(dataFingerprint)"
+    }
+
+    private func loadImageData(
+        for objectID: NSManagedObjectID,
+        side: CardImageSide,
+        persistentStoreCoordinator: NSPersistentStoreCoordinator
+    ) async -> LoadedImageData? {
+        await withCheckedContinuation { continuation in
+            let context = NSManagedObjectContext(concurrencyType: .privateQueueConcurrencyType)
+            context.persistentStoreCoordinator = persistentStoreCoordinator
+            context.undoManager = nil
+            context.mergePolicy = NSMergePolicy(merge: .mergeByPropertyStoreTrumpMergePolicyType)
+
+            context.perform {
+                autoreleasepool {
+                    do {
+                        guard let card = try context.existingObject(with: objectID) as? Card,
+                              !card.isDeleted,
+                              let data = card.imageData(for: side) else {
+                            continuation.resume(returning: nil)
+                            return
+                        }
+
+                        continuation.resume(returning: LoadedImageData(
+                            data: data,
+                            cacheIdentity: card.stableId,
+                            dataFingerprint: Self.dataFingerprint(for: data)
+                        ))
+                    } catch {
+                        AppLogger.data.error("CardImageRepository.loadImageData failed: \(error.localizedDescription)")
+                        continuation.resume(returning: nil)
+                    }
+                }
+            }
+        }
     }
 
     private static func decode(_ data: Data, variant: CardImageVariant) -> UIImage? {

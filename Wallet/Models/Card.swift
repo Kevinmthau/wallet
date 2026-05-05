@@ -59,6 +59,7 @@ public class Card: NSManagedObject, Identifiable {
         static let categoryRaw = "categoryRaw"
         static let frontImageData = "frontImageData"
         static let backImageData = "backImageData"
+        static let hasBackImage = "hasBackImage"
         static let notes = "notes"
         static let isFavorite = "isFavorite"
         static let createdAt = "createdAt"
@@ -95,6 +96,7 @@ public class Card: NSManagedObject, Identifiable {
     @NSManaged public var categoryRaw: String
     @NSManaged public var frontImageData: Data?
     @NSManaged public var backImageData: Data?
+    @NSManaged public var hasBackImage: Bool
     @NSManaged public var notes: String?
     @NSManaged public var isFavorite: Bool
     @NSManaged public var createdAt: Date?
@@ -137,7 +139,7 @@ public class Card: NSManagedObject, Identifiable {
     }
 
     var hasBack: Bool {
-        backImageData != nil
+        hasBackImage
     }
 }
 
