@@ -114,7 +114,6 @@ public class Card: NSManagedObject, Identifiable {
 extension Card {
     func updateLastAccessed(at date: Date = Date()) {
         lastAccessedAt = date
-        updatedAt = date
     }
 
     func touchUpdatedAt(_ date: Date = Date()) {

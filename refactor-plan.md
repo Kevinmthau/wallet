@@ -14,7 +14,7 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
 
 | ID | Priority | Status | Owner | Area | Summary |
 | --- | --- | --- | --- | --- | --- |
-| HD-001 | P0 | Not Started | Unassigned | CloudKit/Core Data | Prevent access tracking from winning edit conflicts |
+| HD-001 | P0 | Done | Codex | CloudKit/Core Data | Prevent access tracking from winning edit conflicts |
 | HD-002 | P0 | Not Started | Unassigned | CloudKit/Core Data | Replace whole-object timestamp conflict resolution |
 | HD-003 | P0 | Not Started | Unassigned | Card mutations | Avoid partial inserted cards when image processing fails |
 | HD-004 | P1 | Not Started | Unassigned | Images/List UI | Reduce list decode pressure and main-actor binary reads |
@@ -29,8 +29,8 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
 
 ### HD-001: Prevent Access Tracking From Winning Edit Conflicts
 
-- Status: `Not Started`
-- Owner: Unassigned
+- Status: `Done`
+- Owner: Codex
 - Target files: `Wallet/Models/Card.swift`, `Wallet/ViewModels/CardStore.swift`, `Wallet/Models/Persistence.swift`, `WalletTests/CardStoreTests.swift`
 - Problem: viewing a card updates `lastAccessedAt` and also updates `updatedAt`; the merge policy uses `updatedAt` to decide the winning object, so a stale device that only opens a card can overwrite a real edit from another device.
 - Intended fix: separate access recency from edit recency. `markAccessed` should update only access-specific state and must not advance the edit/conflict timestamp.
@@ -40,6 +40,8 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
   - Existing add/edit/favorite/delete mutations still update the edit timestamp.
   - Unit tests cover access updates separately from edit updates.
 - Notes:
+  - 2026-05-05: Started implementation to separate access recency from edit timestamps.
+  - 2026-05-05: Implemented and verified with `./scripts/test.sh` on iOS Simulator `id=9AA5D33C-B1CA-46A6-A1FC-C0E1EE7F7B63`; 18 tests passed.
   - Current risk points: `Card.updateLastAccessed`, `CardStore.markAccessed`, and `CardTimestampMergePolicy`.
 
 ### HD-002: Replace Whole-Object Timestamp Conflict Resolution

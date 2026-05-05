@@ -218,7 +218,7 @@ final class CardStoreTests: XCTestCase {
         XCTAssertFalse(state.backChanged)
     }
 
-    func testMarkAccessedUpdatesTimestampImmediately() async throws {
+    func testMarkAccessedUpdatesLastAccessedWithoutChangingUpdatedAt() async throws {
         let addSuccess = await store.addCard(
             name: "Access Test",
             category: .membership,
@@ -227,16 +227,68 @@ final class CardStoreTests: XCTestCase {
         XCTAssertTrue(addSuccess)
 
         let card = try XCTUnwrap(fetchCards().first)
-        let originalAccessDate = try XCTUnwrap(card.lastAccessedAt)
+        let originalAccessDate = Date(timeIntervalSince1970: 1_000)
+        let originalUpdatedAt = Date(timeIntervalSince1970: 2_000)
+        card.lastAccessedAt = originalAccessDate
+        card.updatedAt = originalUpdatedAt
+        try context.save()
 
         store.markAccessed(card)
 
         XCTAssertGreaterThan(try XCTUnwrap(card.lastAccessedAt), originalAccessDate)
+        XCTAssertEqual(try XCTUnwrap(card.updatedAt), originalUpdatedAt)
         XCTAssertTrue(context.hasChanges)
 
         XCTAssertTrue(store.toggleFavorite(card))
         XCTAssertTrue(card.isFavorite)
         XCTAssertGreaterThan(try XCTUnwrap(card.lastAccessedAt), originalAccessDate)
+        XCTAssertGreaterThan(try XCTUnwrap(card.updatedAt), originalUpdatedAt)
+    }
+
+    func testUpdateCardAdvancesUpdatedAtWithoutChangingLastAccessed() async throws {
+        let addSuccess = await store.addCard(
+            name: "Edit Test",
+            category: .membership,
+            frontImage: makeImage(width: 600, height: 400, color: .blue)
+        )
+        XCTAssertTrue(addSuccess)
+
+        let card = try XCTUnwrap(fetchCards().first)
+        let originalAccessDate = Date(timeIntervalSince1970: 1_000)
+        let originalUpdatedAt = Date(timeIntervalSince1970: 2_000)
+        card.lastAccessedAt = originalAccessDate
+        card.updatedAt = originalUpdatedAt
+        try context.save()
+
+        let updateSuccess = await store.updateCard(card, name: "Edited Test")
+
+        XCTAssertTrue(updateSuccess)
+        XCTAssertEqual(card.name, "Edited Test")
+        XCTAssertEqual(try XCTUnwrap(card.lastAccessedAt), originalAccessDate)
+        XCTAssertGreaterThan(try XCTUnwrap(card.updatedAt), originalUpdatedAt)
+    }
+
+    func testRecentlyUsedSortReflectsAccessWithoutChangingUpdatedAt() throws {
+        let accessedCard = try insertStoredCard(
+            name: "Older Access",
+            lastAccessedAt: Date(timeIntervalSince1970: 1_000),
+            updatedAt: Date(timeIntervalSince1970: 3_000)
+        )
+        let previouslyRecentCard = try insertStoredCard(
+            name: "Recent Access",
+            lastAccessedAt: Date(timeIntervalSince1970: 2_000),
+            updatedAt: Date(timeIntervalSince1970: 4_000)
+        )
+        let originalUpdatedAt = try XCTUnwrap(accessedCard.updatedAt)
+
+        store.markAccessed(accessedCard)
+
+        let sortedCards = try fetchCardsSortedByLastAccessed()
+        XCTAssertEqual(sortedCards.first?.objectID, accessedCard.objectID)
+        XCTAssertEqual(sortedCards.dropFirst().first?.objectID, previouslyRecentCard.objectID)
+        XCTAssertEqual(try XCTUnwrap(accessedCard.updatedAt), originalUpdatedAt)
+
+        XCTAssertTrue(store.toggleFavorite(accessedCard))
     }
 
     func testBackfillsMissingIDsAndUpdatedAtOnInit() throws {
@@ -435,6 +487,34 @@ final class CardStoreTests: XCTestCase {
         let request = Card.makeFetchRequest()
         request.sortDescriptors = [NSSortDescriptor(key: Card.Attributes.name, ascending: true)]
         return try (context ?? self.context).fetch(request)
+    }
+
+    private func fetchCardsSortedByLastAccessed() throws -> [Card] {
+        let request = Card.makeFetchRequest()
+        request.sortDescriptors = [
+            NSSortDescriptor(key: Card.Attributes.lastAccessedAt, ascending: false),
+            NSSortDescriptor(key: Card.Attributes.name, ascending: true)
+        ]
+        return try context.fetch(request)
+    }
+
+    @discardableResult
+    private func insertStoredCard(
+        name: String,
+        lastAccessedAt: Date,
+        updatedAt: Date
+    ) throws -> Card {
+        let card = Card.insert(into: context)
+        card.id = UUID()
+        card.name = name
+        card.category = .membership
+        card.isFavorite = false
+        card.createdAt = lastAccessedAt
+        card.lastAccessedAt = lastAccessedAt
+        card.updatedAt = updatedAt
+
+        try context.save()
+        return card
     }
 
     private func performAndWait(

@@ -61,6 +61,7 @@ class CardStore {
     func delete(_ card: Card) -> Bool {
         prepareForImmediateSave()
         AppLogger.data.info("CardStore.delete: \(card.name)")
+        card.touchUpdatedAt()
         context.delete(card)
         return save()
     }
