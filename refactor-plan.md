@@ -15,7 +15,7 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
 | ID | Priority | Status | Owner | Area | Summary |
 | --- | --- | --- | --- | --- | --- |
 | HD-001 | P0 | Done | Codex | CloudKit/Core Data | Prevent access tracking from winning edit conflicts |
-| HD-002 | P0 | Not Started | Unassigned | CloudKit/Core Data | Replace whole-object timestamp conflict resolution |
+| HD-002 | P0 | Done | Codex | CloudKit/Core Data | Replace whole-object timestamp conflict resolution |
 | HD-003 | P0 | Not Started | Unassigned | Card mutations | Avoid partial inserted cards when image processing fails |
 | HD-004 | P1 | Not Started | Unassigned | Images/List UI | Reduce list decode pressure and main-actor binary reads |
 | HD-005 | P1 | Not Started | Unassigned | Images/Memory | Stop holding full-resolution images longer than needed |
@@ -46,8 +46,8 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
 
 ### HD-002: Replace Whole-Object Timestamp Conflict Resolution
 
-- Status: `Not Started`
-- Owner: Unassigned
+- Status: `Done`
+- Owner: Codex
 - Target files: `Wallet/Models/Persistence.swift`, `WalletTests/CardStoreTests.swift`
 - Problem: `CardTimestampMergePolicy` resolves an entire object as object-trump or store-trump. Non-overlapping edits, such as notes changed on one device and favorite toggled on another, can be lost.
 - Intended fix: replace whole-object winner selection with field-aware conflict handling for independent fields, while preserving deterministic behavior for truly conflicting writes to the same field.
@@ -58,6 +58,8 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
   - Merge behavior remains compatible with existing persisted stores.
 - Notes:
   - This may require a small mutation metadata strategy if per-field timestamps are needed.
+  - 2026-05-05: Implemented field-aware merge resolution using cached/store/local snapshots. Independent field edits are preserved, same-field conflicts still use deterministic `updatedAt` ordering, access recency keeps the latest timestamp, and same-side image conflicts keep the image pair from the winning edit.
+  - 2026-05-05: Verified with `DESTINATION='id=F3F6E978-7C73-4E1A-80B6-1C9F068EA4FF' ./scripts/test.sh` on iPhone 17 Pro Max simulator; 22 tests passed.
 
 ### HD-003: Avoid Partial Inserted Cards on Image Processing Failure
 

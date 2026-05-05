@@ -243,6 +243,19 @@ struct PersistenceController {
 final class CardTimestampMergePolicy: NSMergePolicy {
     private let objectTrumpPolicy = NSMergePolicy(merge: .mergeByPropertyObjectTrumpMergePolicyType)
     private let storeTrumpPolicy = NSMergePolicy(merge: .mergeByPropertyStoreTrumpMergePolicyType)
+    private let independentlyResolvedKeys = [
+        Card.Attributes.id,
+        Card.Attributes.name,
+        Card.Attributes.categoryRaw,
+        Card.Attributes.notes,
+        Card.Attributes.isFavorite,
+        Card.Attributes.createdAt,
+        Card.Attributes.updatedAt
+    ]
+    private let imageDataKeys = [
+        Card.Attributes.frontImageData,
+        Card.Attributes.backImageData
+    ]
 
     init(localTimestampKey: String = Card.Attributes.updatedAt) {
         self.localTimestampKey = localTimestampKey
@@ -257,6 +270,8 @@ final class CardTimestampMergePolicy: NSMergePolicy {
     override func resolve(mergeConflicts list: [Any]) throws {
         var objectTrumpConflicts: [Any] = []
         var storeTrumpConflicts: [Any] = []
+        var fieldResolvedConflicts: [Any] = []
+        var fieldRestorations: [(object: NSManagedObject, fields: [ResolvedField])] = []
         var accessTimestampRestorations: [(object: NSManagedObject, timestamp: Date)] = []
 
         for item in list {
@@ -267,6 +282,13 @@ final class CardTimestampMergePolicy: NSMergePolicy {
 
             if let latestAccessTimestamp = latestAccessTimestamp(for: conflict) {
                 accessTimestampRestorations.append((conflict.sourceObject, latestAccessTimestamp))
+            }
+
+            if canResolveByField(conflict) {
+                let resolvedFields = resolveFields(for: conflict)
+                fieldRestorations.append((conflict.sourceObject, resolvedFields))
+                fieldResolvedConflicts.append(conflict)
+                continue
             }
 
             switch winner(for: conflict) {
@@ -281,10 +303,14 @@ final class CardTimestampMergePolicy: NSMergePolicy {
             try storeTrumpPolicy.resolve(mergeConflicts: storeTrumpConflicts)
         }
 
-        if !objectTrumpConflicts.isEmpty {
-            try objectTrumpPolicy.resolve(mergeConflicts: objectTrumpConflicts)
+        let objectTrumpResolvedConflicts = objectTrumpConflicts + fieldResolvedConflicts
+        if !objectTrumpResolvedConflicts.isEmpty {
+            try objectTrumpPolicy.resolve(mergeConflicts: objectTrumpResolvedConflicts)
         }
 
+        // Object-trump uses Core Data's original conflict snapshot, so apply the
+        // resolved values again for fields that intentionally keep a local value.
+        restoreResolvedFields(fieldRestorations)
         restoreAccessTimestamps(accessTimestampRestorations)
     }
 
@@ -295,6 +321,157 @@ final class CardTimestampMergePolicy: NSMergePolicy {
 
     private let localTimestampKey: String
     private let accessTimestampKey = Card.Attributes.lastAccessedAt
+
+    private struct FieldChange {
+        let key: String
+        let localValue: Any?
+        let storeValue: Any?
+        let localChanged: Bool
+        let storeChanged: Bool
+    }
+
+    private struct ResolvedField {
+        let key: String
+        let value: Any?
+        let storeValue: Any?
+    }
+
+    private func canResolveByField(_ conflict: NSMergeConflict) -> Bool {
+        guard conflict.sourceObject.entity.name == Card.Attributes.entityName,
+              !conflict.sourceObject.isDeleted,
+              conflict.cachedSnapshot != nil,
+              conflict.persistedSnapshot != nil else {
+            return false
+        }
+
+        return true
+    }
+
+    private func resolveFields(for conflict: NSMergeConflict) -> [ResolvedField] {
+        resolveIndependentFields(for: conflict) + resolveImageFields(for: conflict)
+    }
+
+    private func resolveIndependentFields(for conflict: NSMergeConflict) -> [ResolvedField] {
+        independentlyResolvedKeys.map { key in
+            let change = fieldChange(for: key, in: conflict)
+            let resolvedValue = resolvedValue(for: change, in: conflict)
+            setResolvedValue(resolvedValue, forKey: key, on: conflict.sourceObject)
+            return ResolvedField(
+                key: key,
+                value: resolvedValue,
+                storeValue: change.storeValue
+            )
+        }
+    }
+
+    private func resolveImageFields(for conflict: NSMergeConflict) -> [ResolvedField] {
+        let imageChanges = imageDataKeys.map { fieldChange(for: $0, in: conflict) }
+        let hasSameSideImageConflict = imageChanges.contains { change in
+            change.localChanged && change.storeChanged
+        }
+
+        if hasSameSideImageConflict {
+            let imageWinner = winner(for: conflict)
+            return imageChanges.map { change in
+                let resolvedValue: Any?
+                let changedFromValue: Any?
+                switch imageWinner {
+                case .object:
+                    resolvedValue = change.localValue
+                    changedFromValue = change.storeValue
+                case .store:
+                    resolvedValue = change.storeValue
+                    changedFromValue = nil
+                }
+                setResolvedValue(
+                    resolvedValue,
+                    forKey: change.key,
+                    on: conflict.sourceObject,
+                    changedFrom: changedFromValue,
+                    forceChange: imageWinner == .object && change.storeChanged
+                )
+                return ResolvedField(
+                    key: change.key,
+                    value: resolvedValue,
+                    storeValue: change.storeValue
+                )
+            }
+        } else {
+            return imageChanges.map { change in
+                let resolvedValue = resolvedValue(for: change, in: conflict)
+                setResolvedValue(resolvedValue, forKey: change.key, on: conflict.sourceObject)
+                return ResolvedField(
+                    key: change.key,
+                    value: resolvedValue,
+                    storeValue: change.storeValue
+                )
+            }
+        }
+    }
+
+    private func fieldChange(for key: String, in conflict: NSMergeConflict) -> FieldChange {
+        let localValue = value(in: conflict.sourceObject, key: key)
+        let storeValue = value(in: conflict.persistedSnapshot, key: key)
+        let baseValue = value(in: conflict.cachedSnapshot, key: key)
+
+        return FieldChange(
+            key: key,
+            localValue: localValue,
+            storeValue: storeValue,
+            localChanged: !valuesAreEqual(localValue, baseValue),
+            storeChanged: !valuesAreEqual(storeValue, baseValue)
+        )
+    }
+
+    private func resolvedValue(for change: FieldChange, in conflict: NSMergeConflict) -> Any? {
+        switch (change.localChanged, change.storeChanged) {
+        case (true, true):
+            switch winner(for: conflict) {
+            case .object:
+                return change.localValue
+            case .store:
+                return change.storeValue
+            }
+        case (true, false):
+            return change.localValue
+        case (false, true):
+            return change.storeValue
+        case (false, false):
+            return change.localValue
+        }
+    }
+
+    private func setResolvedValue(
+        _ resolvedSourceValue: Any?,
+        forKey key: String,
+        on object: NSManagedObject,
+        changedFrom previousValue: Any? = nil,
+        forceChange: Bool = false
+    ) {
+        guard object.entity.propertiesByName[key] != nil else { return }
+
+        let resolvedValue = normalizedValue(resolvedSourceValue)
+        if resolvedValue == nil,
+           let attribute = object.entity.attributesByName[key],
+           !attribute.isOptional {
+            return
+        }
+
+        let currentValue = value(in: object, key: key)
+        let previousValue = normalizedValue(previousValue)
+        let canAssignPreviousValue = previousValue != nil
+            || object.entity.attributesByName[key]?.isOptional == true
+
+        if forceChange,
+           canAssignPreviousValue,
+           valuesAreEqual(currentValue, resolvedValue),
+           !valuesAreEqual(previousValue, resolvedValue) {
+            object.setValue(previousValue, forKey: key)
+            object.setValue(resolvedValue, forKey: key)
+        } else if !valuesAreEqual(currentValue, resolvedValue) {
+            object.setValue(resolvedValue, forKey: key)
+        }
+    }
 
     private func winner(for conflict: NSMergeConflict) -> ConflictWinner {
         let objectTimestamp = timestamp(in: conflict.sourceObject)
@@ -340,6 +517,22 @@ final class CardTimestampMergePolicy: NSMergePolicy {
         }
     }
 
+    private func restoreResolvedFields(
+        _ restorations: [(object: NSManagedObject, fields: [ResolvedField])]
+    ) {
+        for (object, fields) in restorations where !object.isDeleted {
+            for field in fields {
+                setResolvedValue(
+                    field.value,
+                    forKey: field.key,
+                    on: object,
+                    changedFrom: field.storeValue,
+                    forceChange: !valuesAreEqual(field.value, field.storeValue)
+                )
+            }
+        }
+    }
+
     private func timestamp(in object: NSManagedObject?) -> Date? {
         timestamp(in: object, key: localTimestampKey)
     }
@@ -349,10 +542,58 @@ final class CardTimestampMergePolicy: NSMergePolicy {
     }
 
     private func timestamp(in object: NSManagedObject?, key: String) -> Date? {
-        object?.value(forKey: key) as? Date
+        normalizedValue(object?.value(forKey: key)) as? Date
     }
 
     private func timestamp(in snapshot: [String: Any]?, key: String) -> Date? {
-        snapshot?[key] as? Date
+        normalizedValue(snapshot?[key]) as? Date
+    }
+
+    private func value(in object: NSManagedObject, key: String) -> Any? {
+        guard object.entity.propertiesByName[key] != nil else { return nil }
+        return normalizedValue(object.value(forKey: key))
+    }
+
+    private func value(in snapshot: [String: Any]?, key: String) -> Any? {
+        normalizedValue(snapshot?[key])
+    }
+
+    private func normalizedValue(_ value: Any?) -> Any? {
+        if value is NSNull {
+            return nil
+        }
+        return value
+    }
+
+    private func valuesAreEqual(_ lhs: Any?, _ rhs: Any?) -> Bool {
+        let lhs = normalizedValue(lhs)
+        let rhs = normalizedValue(rhs)
+
+        switch (lhs, rhs) {
+        case (nil, nil):
+            return true
+        case (nil, _), (_, nil):
+            return false
+        case let (lhs as Data, rhs as Data):
+            return lhs == rhs
+        case let (lhs as Date, rhs as Date):
+            return lhs == rhs
+        case let (lhs as UUID, rhs as UUID):
+            return lhs == rhs
+        case let (lhs as String, rhs as String):
+            return lhs == rhs
+        case let (lhs as Bool, rhs as Bool):
+            return lhs == rhs
+        case let (lhs as NSNumber, rhs as NSNumber):
+            return lhs == rhs
+        default:
+            if let lhsObject = lhs as? NSObject {
+                return lhsObject.isEqual(rhs)
+            }
+            if let rhsObject = rhs as? NSObject {
+                return rhsObject.isEqual(lhs)
+            }
+            return false
+        }
     }
 }
