@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import CoreData
 import SwiftUI
 import os
@@ -12,10 +13,13 @@ class CardStore {
 
     private var pendingAccessUpdates: [NSManagedObjectID: Date] = [:]
     private var pendingAccessSaveTask: Task<Void, Never>?
+    private var remoteChangeCancellable: AnyCancellable?
 
     init(context: NSManagedObjectContext) {
         self.context = context
         backfillLegacyMetadata()
+        repairBackImagePresence()
+        observeRemoteChanges()
     }
 
     // MARK: - Actions
@@ -214,13 +218,10 @@ class CardStore {
         let missingFieldTimestampPredicates = Card.Attributes.mutableFieldTimestampKeys.map {
             NSPredicate(format: "\($0) == nil")
         }
-        let backImagePresencePredicate = NSPredicate(
-            format: "(\(Card.Attributes.backImageData) != nil AND \(Card.Attributes.hasBackImage) == NO) OR (\(Card.Attributes.backImageData) == nil AND \(Card.Attributes.hasBackImage) == YES)"
-        )
         request.predicate = NSCompoundPredicate(orPredicateWithSubpredicates: [
             NSPredicate(format: "\(Card.Attributes.id) == nil"),
             NSPredicate(format: "\(Card.Attributes.updatedAt) == nil")
-        ] + missingFieldTimestampPredicates + [backImagePresencePredicate])
+        ] + missingFieldTimestampPredicates)
 
         do {
             let legacyCards = try context.fetch(request)
@@ -234,7 +235,6 @@ class CardStore {
                 if card.updatedAt == nil {
                     card.updatedAt = referenceDate
                 }
-                card.hasBackImage = card.backImageData != nil
                 card.backfillMissingMutableFieldTimestamps(at: referenceDate)
             }
 
@@ -242,6 +242,62 @@ class CardStore {
             _ = save()
         } catch {
             AppLogger.data.error("CardStore.backfillLegacyMetadata failed: \(error.localizedDescription)")
+        }
+    }
+
+    @discardableResult
+    private func repairBackImagePresence() -> Int {
+        do {
+            let repairedCount = try repairBackImagePresence(
+                hasBackImage: true,
+                predicate: NSPredicate(
+                    format: "\(Card.Attributes.backImageData) != nil AND \(Card.Attributes.hasBackImage) == NO"
+                )
+            ) + repairBackImagePresence(
+                hasBackImage: false,
+                predicate: NSPredicate(
+                    format: "\(Card.Attributes.backImageData) == nil AND \(Card.Attributes.hasBackImage) == YES"
+                )
+            )
+            guard repairedCount > 0 else { return 0 }
+
+            AppLogger.data.info("CardStore: Repairing back image metadata for \(repairedCount) cards")
+            _ = save()
+            return repairedCount
+        } catch {
+            AppLogger.data.error("CardStore.repairBackImagePresence failed: \(error.localizedDescription)")
+            return 0
+        }
+    }
+
+    private func repairBackImagePresence(
+        hasBackImage: Bool,
+        predicate: NSPredicate
+    ) throws -> Int {
+        let request = Card.makeFetchRequest()
+        request.predicate = predicate
+        request.fetchBatchSize = 100
+        request.includesPropertyValues = false
+        request.returnsObjectsAsFaults = true
+
+        let cards = try context.fetch(request)
+        for card in cards {
+            card.hasBackImage = hasBackImage
+        }
+        return cards.count
+    }
+
+    private func observeRemoteChanges() {
+        guard let coordinator = context.persistentStoreCoordinator else { return }
+
+        remoteChangeCancellable = NotificationCenter.default.publisher(
+            for: .NSPersistentStoreRemoteChange,
+            object: coordinator
+        )
+        .sink { [weak self] _ in
+            Task { @MainActor in
+                self?.repairBackImagePresence()
+            }
         }
     }
 }

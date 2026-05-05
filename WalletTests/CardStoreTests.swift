@@ -445,6 +445,55 @@ final class CardStoreTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(refreshedCard.frontImageUpdatedAt), originalAccessDate)
     }
 
+    func testBackfillsBackImagePresenceOnInit() throws {
+        let timestamp = Date()
+        let cardWithBack = try insertStoredCard(
+            name: "Legacy Back",
+            lastAccessedAt: timestamp,
+            updatedAt: timestamp
+        )
+        cardWithBack.backImageData = Data([0x01])
+        cardWithBack.hasBackImage = false
+
+        let cardWithoutBack = try insertStoredCard(
+            name: "Stale Back Flag",
+            lastAccessedAt: timestamp,
+            updatedAt: timestamp
+        )
+        cardWithoutBack.hasBackImage = true
+
+        try context.save()
+
+        let freshStore = CardStore(context: context)
+        _ = freshStore
+
+        XCTAssertTrue(cardWithBack.hasBack)
+        XCTAssertFalse(cardWithoutBack.hasBack)
+    }
+
+    func testRemoteChangeRepairsImportedBackImagePresence() async throws {
+        let timestamp = Date()
+        let card = try insertStoredCard(
+            name: "Imported Legacy Back",
+            lastAccessedAt: timestamp,
+            updatedAt: timestamp
+        )
+        card.backImageData = Data([0x01])
+        card.hasBackImage = false
+        try context.save()
+
+        XCTAssertFalse(card.hasBack)
+
+        let coordinator = try XCTUnwrap(context.persistentStoreCoordinator)
+        NotificationCenter.default.post(name: .NSPersistentStoreRemoteChange, object: coordinator)
+
+        for _ in 0..<10 where !card.hasBack {
+            await Task.yield()
+        }
+
+        XCTAssertTrue(card.hasBack)
+    }
+
     func testInMemoryPersistenceDisablesCloudKit() {
         XCTAssertNil(persistence.container.persistentStoreDescriptions.first?.cloudKitContainerOptions)
     }
