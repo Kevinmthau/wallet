@@ -1,7 +1,7 @@
 #!/bin/sh
 set -u
 
-if [ -z "${CI_APP_STORE_SIGNED_APP_PATH:-}" ] || [ ! -d "$CI_APP_STORE_SIGNED_APP_PATH" ]; then
+if [ -z "${CI_APP_STORE_SIGNED_APP_PATH:-}" ] || [ ! -e "$CI_APP_STORE_SIGNED_APP_PATH" ]; then
     echo "No App Store signed app found; skipping TestFlight notes."
     exit 0
 fi
