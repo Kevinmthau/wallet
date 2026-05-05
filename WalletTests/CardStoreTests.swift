@@ -56,6 +56,23 @@ final class CardStoreTests: XCTestCase {
         XCTAssertGreaterThan(max(savedFrontImage.size.width, savedFrontImage.size.height), 2048.0)
     }
 
+    func testAddCardFailureDoesNotInsertPartialCard() async throws {
+        let success = await store.addCard(
+            name: "Broken Image",
+            category: .membership,
+            frontImage: UIImage()
+        )
+
+        XCTAssertFalse(success)
+        XCTAssertTrue(try fetchCards().isEmpty)
+        XCTAssertTrue(context.insertedObjects.isEmpty)
+        XCTAssertFalse(context.hasChanges)
+
+        guard case CardError.imageCompressionFailed = try XCTUnwrap(store.lastError as? CardError) else {
+            return XCTFail("Expected image compression failure")
+        }
+    }
+
     func testImageStorageResizesToHigherQualityDimensionLimit() throws {
         let image = makeImage(width: 5000, height: 2500, color: .blue)
 

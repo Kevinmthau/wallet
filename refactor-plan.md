@@ -16,7 +16,7 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
 | --- | --- | --- | --- | --- | --- |
 | HD-001 | P0 | Done | Codex | CloudKit/Core Data | Prevent access tracking from winning edit conflicts |
 | HD-002 | P0 | Done | Codex | CloudKit/Core Data | Replace whole-object timestamp conflict resolution |
-| HD-003 | P0 | Not Started | Unassigned | Card mutations | Avoid partial inserted cards when image processing fails |
+| HD-003 | P0 | Done | Codex | Card mutations | Avoid partial inserted cards when image processing fails |
 | HD-004 | P1 | Not Started | Unassigned | Images/List UI | Reduce list decode pressure and main-actor binary reads |
 | HD-005 | P1 | Not Started | Unassigned | Images/Memory | Stop holding full-resolution images longer than needed |
 | HD-006 | P1 | Not Started | Unassigned | Images/OCR | Make image and OCR work bounded and cancellable |
@@ -63,8 +63,8 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
 
 ### HD-003: Avoid Partial Inserted Cards on Image Processing Failure
 
-- Status: `Not Started`
-- Owner: Unassigned
+- Status: `Done`
+- Owner: Codex
 - Target files: `Wallet/ViewModels/CardStore.swift`, `WalletTests/CardStoreTests.swift`
 - Problem: `addCard` inserts a `Card` before awaiting image compression. If compression throws, the catch path returns `false` without rolling back or deleting the inserted object.
 - Intended fix: prepare image data before inserting the Core Data object, or explicitly roll back/delete the inserted card on failure.
@@ -75,6 +75,7 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
   - Unit tests cover failed front-image processing.
 - Notes:
   - Prefer computing storage data first because it keeps Core Data mutation windows smaller.
+  - 2026-05-05: Implemented by preparing front/back storage image data before inserting the Core Data object. Verified with `DESTINATION='id=F3F6E978-7C73-4E1A-80B6-1C9F068EA4FF' ./scripts/test.sh`; 26 tests passed.
 
 ## P1: Image Performance and Memory
 

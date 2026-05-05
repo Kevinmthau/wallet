@@ -37,13 +37,15 @@ class CardStore {
                 return try await CardImageProcessor.shared.prepareForStorage(backImage)
             }()
 
+            let frontImageData = try await processedFrontImage
+            let backImageData = try await processedBackImage
             let mutationDate = Date()
             let card = Card.insert(into: context)
             card.id = UUID()
             card.name = name
             card.category = category
-            card.frontImageData = try await processedFrontImage
-            card.backImageData = try await processedBackImage
+            card.frontImageData = frontImageData
+            card.backImageData = backImageData
             card.notes = notes
             card.isFavorite = false
             card.createdAt = mutationDate
