@@ -45,7 +45,7 @@ if [[ ! -d "$PROJECT_PATH" ]]; then
 fi
 
 if [[ -z "$DESTINATION" ]]; then
-  destination_discovery_log="$(mktemp "${TMPDIR:-/tmp}/wallet-destinations.XXXXXX.log")"
+  destination_discovery_log="$(mktemp "${TMPDIR:-/tmp}/wallet-destinations.log.XXXXXX")"
   xcodebuild -project "$PROJECT_PATH" -scheme "$SCHEME" -showdestinations >"$destination_discovery_log" 2>&1 || true
   if contains_simulator_failure "$destination_discovery_log"; then
     cat "$destination_discovery_log" >&2
@@ -58,7 +58,7 @@ if [[ -z "$DESTINATION" ]]; then
     | head -n 1 || true)"
 
   if [[ -z "$discovered_id" ]]; then
-    simctl_discovery_log="$(mktemp "${TMPDIR:-/tmp}/wallet-simctl.XXXXXX.log")"
+    simctl_discovery_log="$(mktemp "${TMPDIR:-/tmp}/wallet-simctl.log.XXXXXX")"
     xcrun simctl list devices available >"$simctl_discovery_log" 2>&1 || true
     if contains_simulator_failure "$simctl_discovery_log"; then
       cat "$simctl_discovery_log" >&2
