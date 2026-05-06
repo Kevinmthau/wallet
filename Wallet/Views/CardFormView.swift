@@ -85,7 +85,11 @@ struct CardFormView: View {
     var body: some View {
         NavigationStack {
             Form {
-                CardImagesSection(imageState: imageState, isEditMode: isEditMode)
+                CardImagesSection(
+                    imageState: imageState,
+                    isEditMode: isEditMode,
+                    onEnhance: enhanceImage
+                )
                 cardDetailsSection
                 notesSection
             }
@@ -169,6 +173,17 @@ struct CardFormView: View {
         }
     }
 
+    private func enhanceImage(for target: CardImageState.ScanTarget) {
+        guard shouldLoadOriginalImageForEnhancement(target) else {
+            imageState.enhanceImage(for: target, isEditMode: isEditMode)
+            return
+        }
+
+        imageState.enhanceImage(for: target, isEditMode: true) {
+            await loadOriginalImage(for: target)
+        }
+    }
+
     private func save() {
         guard canSave, !isSaving else { return }
         isSaving = true
@@ -234,6 +249,37 @@ struct CardFormView: View {
             back: backImage
         )
         didLoadExistingImages = true
+    }
+
+    private func shouldLoadOriginalImageForEnhancement(_ target: CardImageState.ScanTarget) -> Bool {
+        guard case .edit = mode else { return false }
+
+        switch target {
+        case .front:
+            return !imageState.frontChanged
+        case .back:
+            return !imageState.backChanged
+        }
+    }
+
+    @MainActor
+    private func loadOriginalImage(for target: CardImageState.ScanTarget) async -> UIImage? {
+        guard case .edit(let card) = mode else { return nil }
+
+        return await CardImageRepository.shared.image(
+            for: card,
+            side: imageSide(for: target),
+            variant: .full
+        )
+    }
+
+    private func imageSide(for target: CardImageState.ScanTarget) -> CardImageSide {
+        switch target {
+        case .front:
+            return .front
+        case .back:
+            return .back
+        }
     }
 }
 

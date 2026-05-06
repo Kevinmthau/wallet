@@ -3,6 +3,7 @@ import SwiftUI
 struct CardImagesSection: View {
     @Bindable var imageState: CardImageState
     let isEditMode: Bool
+    let onEnhance: (CardImageState.ScanTarget) -> Void
 
     var body: some View {
         Section {
@@ -56,7 +57,7 @@ struct CardImagesSection: View {
                     }
                 } : nil,
                 onEnhance: {
-                    imageState.enhanceImage(for: target, isEditMode: isEditMode)
+                    onEnhance(target)
                 },
                 onRemove: {
                     imageState.removeImage(for: target, isEditMode: isEditMode)

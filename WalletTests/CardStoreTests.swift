@@ -372,6 +372,24 @@ final class CardStoreTests: XCTestCase {
         XCTAssertFalse(state.backChanged)
     }
 
+    func testEnhanceImageUsesProvidedSourceImage() async throws {
+        let displayImage = makeImage(width: 300, height: 200, color: .blue)
+        let fullImage = makeImage(width: 1800, height: 1200, color: .red)
+        let state = CardImageState(frontImage: displayImage)
+
+        state.enhanceImage(for: .front, isEditMode: true) {
+            fullImage
+        }
+        try await waitForEnhancement(toFinishIn: state)
+
+        let enhancedImage = try XCTUnwrap(state.frontImage)
+        XCTAssertTrue(state.frontChanged)
+        XCTAssertGreaterThan(
+            max(enhancedImage.pixelSize.width, enhancedImage.pixelSize.height),
+            max(displayImage.pixelSize.width, displayImage.pixelSize.height)
+        )
+    }
+
     func testMarkAccessedUpdatesLastAccessedWithoutChangingUpdatedAt() async throws {
         let addSuccess = await store.addCard(
             name: "Access Test",
@@ -1106,6 +1124,17 @@ final class CardStoreTests: XCTestCase {
         if let thrownError {
             throw thrownError
         }
+    }
+
+    private func waitForEnhancement(
+        toFinishIn state: CardImageState,
+        timeout: TimeInterval = 2.0
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while state.isEnhancing && Date() < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertFalse(state.isEnhancing)
     }
 
     private func makeImage(width: CGFloat, height: CGFloat, color: UIColor) -> UIImage {

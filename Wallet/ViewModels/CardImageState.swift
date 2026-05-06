@@ -144,11 +144,23 @@ class CardImageState {
 
     // MARK: - Enhancement
 
-    func enhanceImage(for target: ScanTarget, isEditMode: Bool) {
-        guard let img = image(for: target) else { return }
+    func enhanceImage(
+        for target: ScanTarget,
+        isEditMode: Bool,
+        sourceImage: (@MainActor () async -> UIImage?)? = nil
+    ) {
+        guard sourceImage != nil || image(for: target) != nil else { return }
 
         runExclusiveImageTask { [weak self] in
-            let enhanced = await ImageEnhancer.shared.enhanceAsDocumentAsync(img)
+            let source: UIImage?
+            if let sourceImage {
+                source = await sourceImage()
+            } else {
+                source = self?.image(for: target)
+            }
+
+            guard !Task.isCancelled, let source else { return }
+            let enhanced = await ImageEnhancer.shared.enhanceAsDocumentAsync(source)
             guard !Task.isCancelled, let self else { return }
             self.setImage(enhanced, for: target, isEditMode: isEditMode)
         }
