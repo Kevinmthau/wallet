@@ -152,6 +152,29 @@ final class CardStoreTests: XCTestCase {
         XCTAssertTrue(firstImage === secondImage)
     }
 
+    func testImageRepositoryDoesNotCacheFullVariant() async throws {
+        let image = makeImage(width: 1200, height: 800, color: .green)
+        let data = try CardImageProcessor.compressForStorage(image)
+        let cacheIdentity = UUID().uuidString
+
+        let loadedFirstImage = await CardImageRepository.shared.image(
+            from: data,
+            cacheIdentity: cacheIdentity,
+            side: .front,
+            variant: .full
+        )
+        let loadedSecondImage = await CardImageRepository.shared.image(
+            from: data,
+            cacheIdentity: cacheIdentity,
+            side: .front,
+            variant: .full
+        )
+        let firstImage = try XCTUnwrap(loadedFirstImage)
+        let secondImage = try XCTUnwrap(loadedSecondImage)
+
+        XCTAssertFalse(firstImage === secondImage)
+    }
+
     func testImageRepositoryInvalidatesCacheWhenDataChanges() async throws {
         let firstData = try CardImageProcessor.compressForStorage(
             makeImage(width: 1200, height: 800, color: .red)

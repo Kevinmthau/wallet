@@ -34,7 +34,6 @@ final class CardImageRepository: @unchecked Sendable {
         let dataFingerprint: String
     }
 
-    private let fullImageCache = ImageCache(costLimit: 96 * 1024 * 1024)
     private let displayImageCache = ImageCache(costLimit: 96 * 1024 * 1024)
     private let thumbnailImageCache = ImageCache(costLimit: 48 * 1024 * 1024)
 
@@ -119,19 +118,21 @@ final class CardImageRepository: @unchecked Sendable {
         variant: CardImageVariant,
         dataFingerprint: String
     ) async -> UIImage? {
-        let key = cacheKey(
-            cacheIdentity: cacheIdentity,
-            side: side,
-            variant: variant,
-            dataFingerprint: dataFingerprint
-        )
         let cache = cache(for: variant)
+        let key = cache == nil
+            ? nil
+            : cacheKey(
+                cacheIdentity: cacheIdentity,
+                side: side,
+                variant: variant,
+                dataFingerprint: dataFingerprint
+            )
 
-        if let cachedImage = cache.image(forKey: key) {
+        if let cache, let key, let cachedImage = cache.image(forKey: key) {
             return cachedImage
         }
 
-        return await withCheckedContinuation { continuation in
+        return await withCheckedContinuation { (continuation: CheckedContinuation<UIImage?, Never>) in
             queue.async {
                 autoreleasepool {
                     guard let image = Self.decode(data, variant: variant) else {
@@ -139,7 +140,9 @@ final class CardImageRepository: @unchecked Sendable {
                         return
                     }
 
-                    cache.setImage(image, forKey: key, cost: Self.imageCost(image))
+                    if let cache, let key {
+                        cache.setImage(image, forKey: key, cost: Self.imageCost(image))
+                    }
                     continuation.resume(returning: image)
                 }
             }
@@ -178,14 +181,14 @@ final class CardImageRepository: @unchecked Sendable {
         }
     }
 
-    private func cache(for variant: CardImageVariant) -> ImageCache {
+    private func cache(for variant: CardImageVariant) -> ImageCache? {
         switch variant {
         case .thumbnail:
             return thumbnailImageCache
         case .display:
             return displayImageCache
         case .full:
-            return fullImageCache
+            return nil
         }
     }
 

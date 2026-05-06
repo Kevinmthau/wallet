@@ -18,7 +18,7 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
 | HD-002 | P0 | Done | Codex | CloudKit/Core Data | Replace whole-object timestamp conflict resolution |
 | HD-003 | P0 | Done | Codex | Card mutations | Avoid partial inserted cards when image processing fails |
 | HD-004 | P1 | Done | Codex | Images/List UI | Reduce list decode pressure and main-actor binary reads |
-| HD-005 | P1 | Not Started | Unassigned | Images/Memory | Stop holding full-resolution images longer than needed |
+| HD-005 | P1 | Done | Codex | Images/Memory | Stop holding full-resolution images longer than needed |
 | HD-006 | P1 | Not Started | Unassigned | Images/OCR | Make image and OCR work bounded and cancellable |
 | HD-007 | P2 | Not Started | Unassigned | Core Data/UI actions | Use object IDs for delayed and async card actions |
 | HD-008 | P2 | Not Started | Unassigned | Search | Debounce search and reduce expensive note predicates |
@@ -98,8 +98,8 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
 
 ### HD-005: Stop Holding Full-Resolution Images Longer Than Needed
 
-- Status: `Not Started`
-- Owner: Unassigned
+- Status: `Done`
+- Owner: Codex
 - Target files: `Wallet/Views/CardFormView.swift`, `Wallet/Views/FullScreenCardView.swift`, `Wallet/Utilities/CardImageRepository.swift`
 - Problem: edit mode loads `.full` images into observable state, sharing stores full images in `shareItems`, and `.full` uses `UIImage(data:)` without downsampling.
 - Intended fix: use display-sized images for UI state, reserve full-resolution decode for share/export only, and clear full-resolution share state after the sheet is dismissed.
@@ -110,6 +110,8 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
   - Memory usage is materially lower when opening edit/full-screen/share flows with two-sided cards.
 - Notes:
   - Preserve saved image quality; this is about display memory, not storage quality.
+  - 2026-05-06: Started implementation to keep edit/full-screen UI on display-sized images and release full-resolution share/export images after use.
+  - 2026-05-06: Implemented edit preview loading with `.display`, cleared full-resolution share images when the share sheet dismisses, and stopped caching `.full` repository decodes. Verified with `./scripts/test.sh` on iOS Simulator `id=9AA5D33C-B1CA-46A6-A1FC-C0E1EE7F7B63`; 32 tests passed.
 
 ### HD-006: Make Image and OCR Work Bounded and Cancellable
 

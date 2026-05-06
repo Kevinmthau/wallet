@@ -61,8 +61,8 @@ struct CardFormView: View {
     private var existingImageLoadIdentifier: String? {
         guard case .edit(let card) = mode else { return nil }
         return [
-            CardImageRepository.shared.loadIdentifier(for: card, side: .front, variant: .full),
-            CardImageRepository.shared.loadIdentifier(for: card, side: .back, variant: .full)
+            CardImageRepository.shared.loadIdentifier(for: card, side: .front, variant: .display),
+            CardImageRepository.shared.loadIdentifier(for: card, side: .back, variant: .display)
         ].joined(separator: "|")
     }
 
@@ -218,14 +218,14 @@ struct CardFormView: View {
         let frontImage = await CardImageRepository.shared.image(
             for: card,
             side: .front,
-            variant: .full
+            variant: .display
         )
         guard !Task.isCancelled else { return }
 
         let backImage = await CardImageRepository.shared.image(
             for: card,
             side: .back,
-            variant: .full
+            variant: .display
         )
         guard !Task.isCancelled else { return }
 

@@ -153,12 +153,15 @@ struct FullScreenCardView: View {
         .onDisappear {
             // Restore brightness to what it was before viewing the card
             UIScreen.main.brightness = brightness
+            if !showingShareSheet {
+                clearShareItems()
+            }
         }
         .statusBarHidden()
         .sheet(isPresented: $showingEditSheet) {
             CardFormView(mode: .edit(card))
         }
-        .sheet(isPresented: $showingShareSheet) {
+        .sheet(isPresented: $showingShareSheet, onDismiss: clearShareItems) {
             ShareSheet(items: shareItems)
         }
         .sheet(isPresented: $showingNotes) {
@@ -218,7 +221,15 @@ struct FullScreenCardView: View {
             shareItems = images
             isPreparingShare = false
             showingShareSheet = !images.isEmpty
+            if images.isEmpty {
+                clearShareItems()
+            }
         }
+    }
+
+    @MainActor
+    private func clearShareItems() {
+        shareItems.removeAll(keepingCapacity: false)
     }
 }
 
