@@ -6,9 +6,12 @@ class CardImageState {
 
     // MARK: - Types
 
-    enum ScanTarget {
+    enum ScanTarget: Hashable {
         case front, back
     }
+
+    typealias ImageEnhancementOperation = (UIImage) async -> UIImage
+    typealias TextExtractionOperation = (UIImage) async -> OCRExtractionResult
 
     // MARK: - Image Data
 
@@ -19,7 +22,13 @@ class CardImageState {
 
     // MARK: - Task Tracking
 
-    private var currentTask: Task<Void, Never>?
+    @ObservationIgnored private var imageTasks: [ScanTarget: Task<Void, Never>] = [:]
+    @ObservationIgnored private var operationIDs: [ScanTarget: UUID] = [:]
+    @ObservationIgnored private var activeTargets = Set<ScanTarget>()
+
+    @ObservationIgnored private let enhanceImageOperation: ImageEnhancementOperation
+    @ObservationIgnored private let enhanceDocumentImageOperation: ImageEnhancementOperation
+    @ObservationIgnored private let extractTextOperation: TextExtractionOperation
 
     // MARK: - OCR Results
 
@@ -47,9 +56,24 @@ class CardImageState {
 
     // MARK: - Initialization
 
-    init(frontImage: UIImage? = nil, backImage: UIImage? = nil) {
+    init(
+        frontImage: UIImage? = nil,
+        backImage: UIImage? = nil,
+        enhanceImageOperation: @escaping ImageEnhancementOperation = { image in
+            await ImageEnhancer.shared.enhanceAsync(image)
+        },
+        enhanceDocumentImageOperation: @escaping ImageEnhancementOperation = { image in
+            await ImageEnhancer.shared.enhanceAsDocumentAsync(image)
+        },
+        extractTextOperation: @escaping TextExtractionOperation = { image in
+            await OCRExtractor.shared.extractText(from: image)
+        }
+    ) {
         self.frontImage = frontImage
         self.backImage = backImage
+        self.enhanceImageOperation = enhanceImageOperation
+        self.enhanceDocumentImageOperation = enhanceDocumentImageOperation
+        self.extractTextOperation = extractTextOperation
     }
 
     deinit {
@@ -83,22 +107,54 @@ class CardImageState {
         }
     }
 
-    /// Runs an async image operation while guaranteeing that:
-    /// - any prior in-flight task is cancelled first,
-    /// - `isEnhancing` is flipped on for the duration,
-    /// - cancellation is honored (no state is written if cancelled),
-    /// - `isEnhancing` and `currentTask` are always reset on exit.
-    private func runExclusiveImageTask(_ work: @MainActor @escaping () async -> Void) {
-        currentTask?.cancel()
-        isEnhancing = true
-        currentTask = Task { @MainActor in
+    private func updateEnhancingState() {
+        isEnhancing = !activeTargets.isEmpty
+    }
+
+    private func isCurrentOperation(_ operationID: UUID, for target: ScanTarget) -> Bool {
+        operationIDs[target] == operationID && !Task.isCancelled
+    }
+
+    /// Runs an async image operation for one side while guaranteeing that:
+    /// - prior work for that same side is cancelled first,
+    /// - front and back operations can proceed independently,
+    /// - stale or cancelled operations cannot write state,
+    /// - `isEnhancing` reflects all active side-specific operations.
+    private func runCurrentImageTask(
+        for target: ScanTarget,
+        _ work: @MainActor @escaping (_ operationID: UUID) async -> Void
+    ) {
+        cancelImageTask(for: target)
+
+        let operationID = UUID()
+        operationIDs[target] = operationID
+        activeTargets.insert(target)
+        updateEnhancingState()
+
+        imageTasks[target] = Task { @MainActor [weak self] in
             defer {
-                isEnhancing = false
-                currentTask = nil
+                self?.finishImageTask(for: target, operationID: operationID)
             }
             guard !Task.isCancelled else { return }
-            await work()
+            await work(operationID)
         }
+    }
+
+    private func cancelImageTask(for target: ScanTarget) {
+        imageTasks[target]?.cancel()
+        imageTasks[target] = nil
+        operationIDs[target] = nil
+        activeTargets.remove(target)
+        updateEnhancingState()
+    }
+
+    private func finishImageTask(for target: ScanTarget, operationID: UUID) {
+        guard operationIDs[target] == operationID else { return }
+
+        imageTasks[target] = nil
+        operationIDs[target] = nil
+        activeTargets.remove(target)
+        updateEnhancingState()
     }
 
     // MARK: - Scan Result Handling
@@ -108,9 +164,10 @@ class CardImageState {
         let target = scannerTarget
         setOCRResult(result.extractedText, for: target)
 
-        runExclusiveImageTask { [weak self] in
-            let enhanced = await ImageEnhancer.shared.enhanceAsync(result.image)
-            guard !Task.isCancelled, let self else { return }
+        runCurrentImageTask(for: target) { [weak self] operationID in
+            guard let self else { return }
+            let enhanced = await self.enhanceImageOperation(result.image)
+            guard self.isCurrentOperation(operationID, for: target) else { return }
             self.setImage(enhanced, for: target, isEditMode: isEditMode)
         }
     }
@@ -120,22 +177,24 @@ class CardImageState {
     func loadAndEnhanceImage(from item: PhotosPickerItem?, for target: ScanTarget, isEditMode: Bool) {
         guard let item else { return }
 
-        runExclusiveImageTask { [weak self] in
+        runCurrentImageTask(for: target) { [weak self] operationID in
             do {
                 guard let data = try await item.loadTransferable(type: Data.self),
                       let image = UIImage(data: data) else {
                     return
                 }
-                guard !Task.isCancelled else { return }
+                guard let self, self.isCurrentOperation(operationID, for: target) else { return }
 
-                async let enhancedImage = ImageEnhancer.shared.enhanceAsync(image)
-                async let ocrResult = OCRExtractor.shared.extractText(from: image)
+                async let enhancedImage = self.enhanceImageOperation(image)
+                async let ocrResult = self.extractTextOperation(image)
                 let enhanced = await enhancedImage
                 let extractedText = await ocrResult
 
-                guard !Task.isCancelled, let self else { return }
+                guard self.isCurrentOperation(operationID, for: target) else { return }
                 self.setImage(enhanced, for: target, isEditMode: isEditMode)
                 self.setOCRResult(extractedText, for: target)
+            } catch is CancellationError {
+                return
             } catch {
                 AppLogger.ui.error("CardImageState: Failed to load image: \(error.localizedDescription)")
             }
@@ -151,17 +210,18 @@ class CardImageState {
     ) {
         guard sourceImage != nil || image(for: target) != nil else { return }
 
-        runExclusiveImageTask { [weak self] in
+        runCurrentImageTask(for: target) { [weak self] operationID in
+            guard let self else { return }
             let source: UIImage?
             if let sourceImage {
                 source = await sourceImage()
             } else {
-                source = self?.image(for: target)
+                source = self.image(for: target)
             }
 
-            guard !Task.isCancelled, let source else { return }
-            let enhanced = await ImageEnhancer.shared.enhanceAsDocumentAsync(source)
-            guard !Task.isCancelled, let self else { return }
+            guard self.isCurrentOperation(operationID, for: target), let source else { return }
+            let enhanced = await self.enhanceDocumentImageOperation(source)
+            guard self.isCurrentOperation(operationID, for: target) else { return }
             self.setImage(enhanced, for: target, isEditMode: isEditMode)
         }
     }
@@ -169,15 +229,19 @@ class CardImageState {
     // MARK: - Cleanup
 
     func cancelPendingTasks() {
-        currentTask?.cancel()
-        currentTask = nil
+        imageTasks.values.forEach { $0.cancel() }
+        imageTasks.removeAll()
+        operationIDs.removeAll()
+        activeTargets.removeAll()
         isEnhancing = false
     }
 
     // MARK: - Remove Image
 
     func removeImage(for target: ScanTarget, isEditMode: Bool) {
+        cancelImageTask(for: target)
         setImage(nil, for: target, isEditMode: isEditMode)
+        setOCRResult(nil, for: target)
     }
 
     func setExistingImages(front: UIImage?, back: UIImage?) {

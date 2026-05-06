@@ -1,3 +1,4 @@
+import Foundation
 import UIKit
 import CoreImage
 import CoreImage.CIFilterBuiltins
@@ -5,6 +6,137 @@ import CoreImage.CIFilterBuiltins
 /// Shared CIContext for all image processing operations (expensive to create)
 enum ImageProcessingContext {
     static let shared = CIContext()
+}
+
+enum ImageProcessingTimeoutError: Error {
+    case timedOut
+}
+
+func withImageProcessingTimeout<Value>(
+    seconds: TimeInterval,
+    operation: @escaping () async throws -> Value
+) async throws -> Value {
+    try await withThrowingTaskGroup(of: Value.self) { group in
+        group.addTask {
+            try await operation()
+        }
+        group.addTask {
+            let nanoseconds = UInt64(max(0, seconds) * 1_000_000_000)
+            try await Task.sleep(nanoseconds: nanoseconds)
+            throw ImageProcessingTimeoutError.timedOut
+        }
+
+        guard let result = try await group.next() else {
+            throw CancellationError()
+        }
+
+        group.cancelAll()
+        return result
+    }
+}
+
+final class ImageProcessingWorkQueue: @unchecked Sendable {
+    static let shared = ImageProcessingWorkQueue()
+
+    private let queue: OperationQueue
+
+    init(
+        maxConcurrentOperationCount: Int = 2,
+        name: String = "wallet.image-processing.work-queue"
+    ) {
+        queue = OperationQueue()
+        queue.name = name
+        queue.qualityOfService = .userInitiated
+        queue.maxConcurrentOperationCount = max(1, maxConcurrentOperationCount)
+    }
+
+    func run<Value>(
+        _ operation: @escaping (_ isCancelled: @escaping () -> Bool) throws -> Value
+    ) async throws -> Value {
+        try Task.checkCancellation()
+
+        let workItem = ImageProcessingOperation(operation: operation)
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Value, any Error>) in
+                workItem.setContinuation(continuation)
+                queue.addOperation(workItem)
+            }
+        } onCancel: {
+            workItem.cancel()
+        }
+    }
+}
+
+private final class ImageProcessingOperation<Value>: Operation, @unchecked Sendable {
+    private let operation: (_ isCancelled: @escaping () -> Bool) throws -> Value
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, any Error>?
+    private var didFinish = false
+
+    init(operation: @escaping (_ isCancelled: @escaping () -> Bool) throws -> Value) {
+        self.operation = operation
+    }
+
+    func setContinuation(_ continuation: CheckedContinuation<Value, any Error>) {
+        lock.lock()
+        if didFinish {
+            lock.unlock()
+            continuation.resume(throwing: CancellationError())
+            return
+        }
+
+        self.continuation = continuation
+        lock.unlock()
+    }
+
+    override func main() {
+        guard !isCancelled else {
+            finish(.failure(CancellationError()))
+            return
+        }
+
+        let result: Result<Value, any Error> = autoreleasepool {
+            do {
+                guard !isCancelled else {
+                    throw CancellationError()
+                }
+
+                let value = try operation { [weak self] in
+                    self?.isCancelled ?? true
+                }
+
+                guard !isCancelled else {
+                    throw CancellationError()
+                }
+
+                return .success(value)
+            } catch {
+                return .failure(error)
+            }
+        }
+
+        finish(result)
+    }
+
+    override func cancel() {
+        super.cancel()
+        finish(.failure(CancellationError()))
+    }
+
+    private func finish(_ result: Result<Value, any Error>) {
+        lock.lock()
+        guard !didFinish else {
+            lock.unlock()
+            return
+        }
+
+        didFinish = true
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+
+        continuation?.resume(with: result)
+    }
 }
 
 final class ImageEnhancer: @unchecked Sendable {
@@ -44,23 +176,37 @@ final class ImageEnhancer: @unchecked Sendable {
         return UIImage(cgImage: cgImage, scale: image.scale, orientation: image.imageOrientation)
     }
 
-    /// Async enhancement on background thread
+    /// Async enhancement on the bounded image processing queue.
     func enhanceAsync(_ image: UIImage) async -> UIImage {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let enhanced = self.enhance(image)
-                continuation.resume(returning: enhanced)
+        do {
+            return try await ImageProcessingWorkQueue.shared.run { isCancelled in
+                guard !isCancelled() else {
+                    throw CancellationError()
+                }
+                return self.enhance(image)
             }
+        } catch is CancellationError {
+            return image
+        } catch {
+            AppLogger.ui.error("ImageEnhancer: Enhancement failed: \(error.localizedDescription)")
+            return image
         }
     }
 
-    /// Async document enhancement on background thread
+    /// Async document enhancement on the bounded image processing queue.
     func enhanceAsDocumentAsync(_ image: UIImage) async -> UIImage {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let enhanced = self.enhanceAsDocument(image)
-                continuation.resume(returning: enhanced)
+        do {
+            return try await ImageProcessingWorkQueue.shared.run { isCancelled in
+                guard !isCancelled() else {
+                    throw CancellationError()
+                }
+                return self.enhanceAsDocument(image)
             }
+        } catch is CancellationError {
+            return image
+        } catch {
+            AppLogger.ui.error("ImageEnhancer: Document enhancement failed: \(error.localizedDescription)")
+            return image
         }
     }
 

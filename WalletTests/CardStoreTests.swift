@@ -390,6 +390,89 @@ final class CardStoreTests: XCTestCase {
         )
     }
 
+    func testImageEnhancementTasksAreTrackedPerSide() async throws {
+        let frontImage = makeImage(width: 300, height: 200, color: .blue)
+        let backImage = makeImage(width: 320, height: 220, color: .red)
+        let state = CardImageState(
+            frontImage: frontImage,
+            backImage: backImage,
+            enhanceDocumentImageOperation: { image in
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                return image
+            }
+        )
+
+        state.enhanceImage(for: .front, isEditMode: true)
+        state.enhanceImage(for: .back, isEditMode: true)
+
+        try await waitForEnhancement(toFinishIn: state)
+
+        XCTAssertTrue(state.frontChanged)
+        XCTAssertTrue(state.backChanged)
+        XCTAssertEqual(state.frontImage?.pixelSize.width, frontImage.pixelSize.width)
+        XCTAssertEqual(state.backImage?.pixelSize.width, backImage.pixelSize.width)
+    }
+
+    func testRemovingImageCancelsPendingEnhancementAndSuppressesLateResult() async throws {
+        let scannedImage = makeImage(width: 300, height: 200, color: .blue)
+        let state = CardImageState(
+            enhanceImageOperation: { image in
+                await Task.detached {
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }.value
+                return image
+            }
+        )
+
+        state.scannerTarget = .front
+        state.handleScanResult(
+            ScanResult(
+                image: scannedImage,
+                extractedText: OCRExtractionResult(texts: ["Member 123"])
+            ),
+            isEditMode: true
+        )
+        XCTAssertTrue(state.isEnhancing)
+
+        state.removeImage(for: .front, isEditMode: true)
+        XCTAssertNil(state.frontImage)
+        XCTAssertNil(state.frontOCRResult)
+
+        try await Task.sleep(nanoseconds: 150_000_000)
+
+        XCTAssertNil(state.frontImage)
+        XCTAssertNil(state.frontOCRResult)
+        XCTAssertTrue(state.frontChanged)
+        XCTAssertFalse(state.isEnhancing)
+    }
+
+    func testReplacingImageSuppressesOlderEnhancementResult() async throws {
+        let originalImage = makeImage(width: 300, height: 200, color: .blue)
+        let replacementImage = makeImage(width: 420, height: 260, color: .red)
+        let state = CardImageState(
+            enhanceImageOperation: { image in
+                let delay: UInt64 = image.pixelSize.width == originalImage.pixelSize.width
+                    ? 120_000_000
+                    : 20_000_000
+                await Task.detached {
+                    try? await Task.sleep(nanoseconds: delay)
+                }.value
+                return image
+            }
+        )
+
+        state.scannerTarget = .front
+        state.handleScanResult(ScanResult(image: originalImage), isEditMode: true)
+        state.handleScanResult(ScanResult(image: replacementImage), isEditMode: true)
+
+        try await waitForEnhancement(toFinishIn: state)
+        try await Task.sleep(nanoseconds: 150_000_000)
+
+        XCTAssertEqual(state.frontImage?.pixelSize.width, replacementImage.pixelSize.width)
+        XCTAssertTrue(state.frontChanged)
+        XCTAssertFalse(state.isEnhancing)
+    }
+
     func testMarkAccessedUpdatesLastAccessedWithoutChangingUpdatedAt() async throws {
         let addSuccess = await store.addCard(
             name: "Access Test",

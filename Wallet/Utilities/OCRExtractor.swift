@@ -1,5 +1,4 @@
 import UIKit
-@preconcurrency import Dispatch
 @preconcurrency import Vision
 
 /// Result from OCR extraction
@@ -18,12 +17,6 @@ struct OCRExtractionResult: Sendable {
 final class OCRExtractor: @unchecked Sendable {
     static let shared = OCRExtractor()
 
-    private let queue = DispatchQueue(
-        label: "ocr.extractor.queue",
-        qos: .userInitiated,
-        attributes: .concurrent
-    )
-
     private init() {}
 
     /// Extract all text from image using Vision framework
@@ -33,50 +26,71 @@ final class OCRExtractor: @unchecked Sendable {
             return OCRExtractionResult(texts: [])
         }
 
-        return await withCheckedContinuation { continuation in
-            let resumer = ContinuationResumer(continuation)
-
-            queue.asyncAfter(deadline: .now() + Constants.Scanner.ocrTimeout) {
-                AppLogger.scanner.warning("OCRExtractor: Text extraction timed out")
-                resumer.resume(with: OCRExtractionResult(texts: []))
-            }
-
-            queue.async {
-                autoreleasepool {
-                    var extractedTexts: [String] = []
-
-                    let request = VNRecognizeTextRequest { request, error in
-                        if let error {
-                            AppLogger.scanner.error("OCR failed: \(error.localizedDescription)")
-                            resumer.resume(with: OCRExtractionResult(texts: []))
-                            return
-                        }
-
-                        guard let observations = request.results as? [VNRecognizedTextObservation] else {
-                            resumer.resume(with: OCRExtractionResult(texts: []))
-                            return
-                        }
-
-                        extractedTexts = observations.compactMap { observation in
-                            observation.topCandidates(1).first?.string
-                        }
+        do {
+            return try await withImageProcessingTimeout(seconds: Constants.Scanner.ocrTimeout) {
+                try await ImageProcessingWorkQueue.shared.run { isCancelled in
+                    guard !isCancelled() else {
+                        throw CancellationError()
                     }
 
-                    request.recognitionLevel = .accurate
-                    request.usesLanguageCorrection = false
-                    request.recognitionLanguages = ["en-US"]
-
-                    let handler = VNImageRequestHandler(ciImage: ciImage, options: [:])
-                    do {
-                        try handler.perform([request])
-                        AppLogger.scanner.info("OCR extracted \(extractedTexts.count) text blocks")
-                        resumer.resume(with: OCRExtractionResult(texts: extractedTexts))
-                    } catch {
-                        AppLogger.scanner.error("OCR failed: \(error.localizedDescription)")
-                        resumer.resume(with: OCRExtractionResult(texts: []))
-                    }
+                    return try self.extractTextSynchronously(from: ciImage, isCancelled: isCancelled)
                 }
             }
+        } catch is CancellationError {
+            return OCRExtractionResult(texts: [])
+        } catch ImageProcessingTimeoutError.timedOut {
+            AppLogger.scanner.warning("OCRExtractor: Text extraction timed out")
+            return OCRExtractionResult(texts: [])
+        } catch {
+            AppLogger.scanner.error("OCR failed: \(error.localizedDescription)")
+            return OCRExtractionResult(texts: [])
+        }
+    }
+
+    private func extractTextSynchronously(
+        from ciImage: CIImage,
+        isCancelled: () -> Bool
+    ) throws -> OCRExtractionResult {
+        try autoreleasepool {
+            guard !isCancelled() else {
+                throw CancellationError()
+            }
+
+            var extractedTexts: [String] = []
+            var requestError: Error?
+
+            let request = VNRecognizeTextRequest { request, error in
+                if let error {
+                    requestError = error
+                    return
+                }
+
+                guard let observations = request.results as? [VNRecognizedTextObservation] else {
+                    return
+                }
+
+                extractedTexts = observations.compactMap { observation in
+                    observation.topCandidates(1).first?.string
+                }
+            }
+
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = false
+            request.recognitionLanguages = ["en-US"]
+
+            let handler = VNImageRequestHandler(ciImage: ciImage, options: [:])
+            try handler.perform([request])
+
+            guard !isCancelled() else {
+                throw CancellationError()
+            }
+
+            if let requestError {
+                throw requestError
+            }
+
+            AppLogger.scanner.info("OCR extracted \(extractedTexts.count) text blocks")
+            return OCRExtractionResult(texts: extractedTexts)
         }
     }
 }

@@ -19,7 +19,7 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
 | HD-003 | P0 | Done | Codex | Card mutations | Avoid partial inserted cards when image processing fails |
 | HD-004 | P1 | Done | Codex | Images/List UI | Reduce list decode pressure and main-actor binary reads |
 | HD-005 | P1 | Done | Codex | Images/Memory | Stop holding full-resolution images longer than needed |
-| HD-006 | P1 | Not Started | Unassigned | Images/OCR | Make image and OCR work bounded and cancellable |
+| HD-006 | P1 | Done | Codex | Images/OCR | Make image and OCR work bounded and cancellable |
 | HD-007 | P2 | Not Started | Unassigned | Core Data/UI actions | Use object IDs for delayed and async card actions |
 | HD-008 | P2 | Not Started | Unassigned | Search | Debounce search and reduce expensive note predicates |
 | HD-009 | P2 | Not Started | Unassigned | Persistence | Surface persistent store load failures |
@@ -115,8 +115,8 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
 
 ### HD-006: Make Image and OCR Work Bounded and Cancellable
 
-- Status: `Not Started`
-- Owner: Unassigned
+- Status: `Done`
+- Owner: Codex
 - Target files: `Wallet/ViewModels/CardImageState.swift`, `Wallet/Utilities/ImageEnhancer.swift`, `Wallet/Utilities/OCRExtractor.swift`, `Wallet/Utilities/CardImageProcessor.swift`
 - Problem: Swift tasks are cancelled, but underlying `DispatchQueue` and global queue work continues. A single `currentTask` also means front and back image operations can cancel each other.
 - Intended fix: centralize image/OCR work behind bounded async executors or actors, and track front/back operations independently.
@@ -127,6 +127,8 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
   - Tests cover stale result suppression for rapid image replacement.
 - Notes:
   - Vision requests may not be fully cancellable, so stale-result suppression and concurrency limits are required even if hard cancellation is partial.
+  - 2026-05-06: Started implementation to bound shared image/OCR execution and split front/back image operation tracking.
+  - 2026-05-06: Implemented a shared bounded image-processing work queue, moved OCR/storage/orientation/rectangle/enhancement work onto it, split `CardImageState` front/back task tracking, and cancel side-specific work on image removal. Verified with `./scripts/test.sh` on iOS Simulator `id=9AA5D33C-B1CA-46A6-A1FC-C0E1EE7F7B63`; 36 tests passed.
 
 ## P2: UI State, Async Actions, and Error Handling
 
