@@ -1,11 +1,14 @@
 import SwiftUI
+import CoreData
 import os
 
 struct FullScreenCardView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.managedObjectContext) private var context
+
     let card: Card
     let onViewed: () -> Void
-    let onDelete: (Card) -> Void
+    let onDelete: (NSManagedObjectID) -> Void
 
     @State private var showingBack = false
     @State private var brightness: CGFloat = UIScreen.main.brightness
@@ -169,7 +172,7 @@ struct FullScreenCardView: View {
         }
         .confirmationDialog("Delete Card", isPresented: $showingDeleteConfirmation) {
             Button("Delete", role: .destructive) {
-                onDelete(card)
+                onDelete(card.objectID)
             }
         } message: {
             Text("Are you sure you want to delete \"\(card.name)\"? This cannot be undone.")
@@ -181,15 +184,18 @@ struct FullScreenCardView: View {
 
     @MainActor
     private func loadDisplayImages() async {
+        let objectID = card.objectID
         frontDisplayImage = await CardImageRepository.shared.image(
-            for: card,
+            for: objectID,
             side: .front,
-            variant: .display
+            variant: .display,
+            in: context
         )
         backDisplayImage = await CardImageRepository.shared.image(
-            for: card,
+            for: objectID,
             side: .back,
-            variant: .display
+            variant: .display,
+            in: context
         )
     }
 
@@ -197,17 +203,21 @@ struct FullScreenCardView: View {
     private func prepareShareItems() {
         guard !isPreparingShare else { return }
         isPreparingShare = true
+        let objectID = card.objectID
+        let sourceContext = context
 
         Task { @MainActor in
             let frontImage = await CardImageRepository.shared.image(
-                for: card,
+                for: objectID,
                 side: .front,
-                variant: .full
+                variant: .full,
+                in: sourceContext
             )
             let backImage = await CardImageRepository.shared.image(
-                for: card,
+                for: objectID,
                 side: .back,
-                variant: .full
+                variant: .full,
+                in: sourceContext
             )
 
             var images: [UIImage] = []

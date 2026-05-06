@@ -74,6 +74,40 @@ final class CardStoreTests: XCTestCase {
         }
     }
 
+    func testDeleteByObjectIDIsNoopWhenCardIsAlreadyGone() throws {
+        let card = try insertStoredCard(
+            name: "Already Deleted",
+            lastAccessedAt: Date(),
+            updatedAt: Date()
+        )
+        let objectID = card.objectID
+
+        context.delete(card)
+        try context.save()
+
+        XCTAssertTrue(store.delete(objectID: objectID))
+        XCTAssertTrue(try fetchCards().isEmpty)
+        XCTAssertNil(store.lastError)
+    }
+
+    func testUpdateCardFailsGracefullyWhenObjectIDNoLongerResolves() async throws {
+        let card = try insertStoredCard(
+            name: "Deleted Before Save",
+            lastAccessedAt: Date(),
+            updatedAt: Date()
+        )
+
+        context.delete(card)
+        try context.save()
+
+        let success = await store.updateCard(card, name: "Should Not Save")
+
+        XCTAssertFalse(success)
+        guard case CardError.cardNotFound = try XCTUnwrap(store.lastError as? CardError) else {
+            return XCTFail("Expected missing card failure")
+        }
+    }
+
     func testImageStorageResizesToHigherQualityDimensionLimit() throws {
         let image = makeImage(width: 5000, height: 2500, color: .blue)
 
@@ -622,6 +656,21 @@ final class CardStoreTests: XCTestCase {
         XCTAssertNil(persistence.container.persistentStoreDescriptions.first?.cloudKitContainerOptions)
     }
 
+    func testPersistentStoreLoadFailureIsObservable() async throws {
+        let storeURL = URL(fileURLWithPath: "/dev/null/Wallet.sqlite")
+        let failingPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
+
+        for _ in 0..<50 where !failingPersistence.loadState.didFinishLoading {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        XCTAssertTrue(failingPersistence.loadState.didFinishLoading)
+        let failure = try XCTUnwrap(failingPersistence.loadState.loadFailure)
+        XCTAssertFalse(failure.underlyingDescription.isEmpty)
+        XCTAssertNotNil(failure.errorDescription)
+        XCTAssertNotNil(failure.recoverySuggestion)
+    }
+
     func testTimestampMergePolicyPrefersNewerStoreVersion() throws {
         let storeURL = makeTemporaryStoreURL()
         do {
@@ -1112,6 +1161,66 @@ final class CardStoreTests: XCTestCase {
         ))
     }
 
+    func testCardListFetchPredicateCombinesCategoryAndSearch() throws {
+        let matchingCard = try insertStoredCard(
+            name: "Library",
+            lastAccessedAt: Date(),
+            updatedAt: Date(),
+            category: .loyalty,
+            notes: "Member 123"
+        )
+        _ = try insertStoredCard(
+            name: "Library",
+            lastAccessedAt: Date(),
+            updatedAt: Date(),
+            category: .membership,
+            notes: "Member 123"
+        )
+        _ = try insertStoredCard(
+            name: "Museum",
+            lastAccessedAt: Date(),
+            updatedAt: Date(),
+            category: .loyalty,
+            notes: "No match"
+        )
+
+        let request = Card.makeFetchRequest()
+        request.predicate = CardListView.makeFetchPredicate(
+            filter: .category,
+            category: .loyalty,
+            searchText: " member 123 "
+        )
+        request.sortDescriptors = [NSSortDescriptor(key: Card.Attributes.name, ascending: true)]
+
+        let results = try context.fetch(request)
+        XCTAssertEqual(results.map(\.objectID), [matchingCard.objectID])
+    }
+
+    func testCardListFetchPredicateTreatsWhitespaceSearchAsEmpty() throws {
+        let favoriteCard = try insertStoredCard(
+            name: "Favorite",
+            lastAccessedAt: Date(),
+            updatedAt: Date(),
+            isFavorite: true
+        )
+        _ = try insertStoredCard(
+            name: "Other",
+            lastAccessedAt: Date(),
+            updatedAt: Date(),
+            isFavorite: false
+        )
+
+        let request = Card.makeFetchRequest()
+        request.predicate = CardListView.makeFetchPredicate(
+            filter: .favorites,
+            category: .membership,
+            searchText: "   "
+        )
+
+        let results = try context.fetch(request)
+        XCTAssertEqual(results.map(\.objectID), [favoriteCard.objectID])
+    }
+
     private func seedConflictTestCard(
         in context: NSManagedObjectContext,
         timestamp: Date = Date(),
@@ -1175,14 +1284,19 @@ final class CardStoreTests: XCTestCase {
     private func insertStoredCard(
         name: String,
         lastAccessedAt: Date,
-        updatedAt: Date
+        updatedAt: Date,
+        category: CardCategory = .membership,
+        notes: String? = nil,
+        isFavorite: Bool = false,
+        hasBackImage: Bool = false
     ) throws -> Card {
         let card = Card.insert(into: context)
         card.id = UUID()
         card.name = name
-        card.category = .membership
-        card.hasBackImage = false
-        card.isFavorite = false
+        card.category = category
+        card.notes = notes
+        card.hasBackImage = hasBackImage
+        card.isFavorite = isFavorite
         card.createdAt = lastAccessedAt
         card.lastAccessedAt = lastAccessedAt
         card.updatedAt = updatedAt

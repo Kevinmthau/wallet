@@ -2,19 +2,63 @@ import SwiftUI
 
 @main
 struct WalletApp: App {
-    let persistenceController = PersistenceController.shared
+    private let persistenceController: PersistenceController
     @State private var cardStore: CardStore
+    @State private var persistentStoreLoadState: PersistentStoreLoadState
 
     init() {
-        let context = PersistenceController.shared.container.viewContext
+        let persistenceController = PersistenceController.shared
+        self.persistenceController = persistenceController
+
+        let context = persistenceController.container.viewContext
         _cardStore = State(initialValue: CardStore(context: context))
+        _persistentStoreLoadState = State(initialValue: persistenceController.loadState)
     }
 
     var body: some Scene {
         WindowGroup {
-            CardListView()
-                .environment(\.managedObjectContext, persistenceController.container.viewContext)
-                .environment(cardStore)
+            WalletRootView(
+                persistenceController: persistenceController,
+                cardStore: cardStore,
+                persistentStoreLoadState: persistentStoreLoadState
+            )
+        }
+    }
+}
+
+private struct WalletRootView: View {
+    let persistenceController: PersistenceController
+    let cardStore: CardStore
+    let persistentStoreLoadState: PersistentStoreLoadState
+
+    var body: some View {
+        Group {
+            if let loadFailure = persistentStoreLoadState.loadFailure {
+                PersistentStoreFailureView(loadFailure: loadFailure)
+            } else {
+                CardListView()
+                    .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                    .environment(cardStore)
+            }
+        }
+    }
+}
+
+private struct PersistentStoreFailureView: View {
+    let loadFailure: PersistentStoreLoadFailure
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Wallet Cannot Open", systemImage: "exclamationmark.triangle")
+        } description: {
+            VStack(spacing: 8) {
+                Text(loadFailure.errorDescription ?? "Wallet could not open its local database.")
+                Text(loadFailure.recoverySuggestion ?? "Restart Wallet and try again.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .multilineTextAlignment(.center)
+            .padding(.horizontal)
         }
     }
 }

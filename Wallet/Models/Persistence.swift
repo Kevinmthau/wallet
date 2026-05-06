@@ -1,5 +1,38 @@
 import CoreData
 import Combine
+import Observation
+
+struct PersistentStoreLoadFailure: Identifiable, LocalizedError {
+    let id = UUID()
+    let underlyingDescription: String
+
+    init(error: Error) {
+        underlyingDescription = error.localizedDescription
+    }
+
+    var errorDescription: String? {
+        "Wallet could not open its local database."
+    }
+
+    var recoverySuggestion: String? {
+        "Restart Wallet. If this continues, check available device storage and iCloud availability before reinstalling."
+    }
+}
+
+@Observable
+final class PersistentStoreLoadState {
+    private(set) var didFinishLoading = false
+    private(set) var loadFailure: PersistentStoreLoadFailure?
+
+    var hasFailure: Bool {
+        loadFailure != nil
+    }
+
+    func finishLoading(error: Error?) {
+        didFinishLoading = true
+        loadFailure = error.map(PersistentStoreLoadFailure.init(error:))
+    }
+}
 
 private final class RemoteChangeLogCoalescer {
     private let interval: TimeInterval
@@ -39,6 +72,7 @@ struct PersistenceController {
     private static let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
     let container: NSPersistentCloudKitContainer
+    let loadState: PersistentStoreLoadState
 
     /// Publisher for remote CloudKit changes - subscribe to refresh UI when other devices sync
     let remoteChangePublisher = PassthroughSubject<Void, Never>()
@@ -53,6 +87,8 @@ struct PersistenceController {
         cloudKitEnabled: Bool? = nil
     ) {
         let cloudKitEnabled = cloudKitEnabled ?? (!inMemory && !Self.isRunningTests)
+        let loadState = PersistentStoreLoadState()
+        self.loadState = loadState
 
         // Create the managed object model programmatically
         let model = NSManagedObjectModel()
@@ -193,6 +229,9 @@ struct PersistenceController {
         container.loadPersistentStores { _, error in
             if let error = error as NSError? {
                 AppLogger.data.error("PersistenceController: Failed to load persistent store: \(error.localizedDescription), \(error.userInfo)")
+            }
+            DispatchQueue.main.async {
+                loadState.finishLoading(error: error)
             }
         }
 

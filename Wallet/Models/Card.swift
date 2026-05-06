@@ -5,12 +5,15 @@ import SwiftUI
 /// Errors that can occur during card operations
 enum CardError: LocalizedError {
     case imageCompressionFailed
+    case cardNotFound
     case contextSaveFailed(underlying: Error)
 
     var errorDescription: String? {
         switch self {
         case .imageCompressionFailed:
             return "Failed to compress card image"
+        case .cardNotFound:
+            return "This card is no longer available"
         case .contextSaveFailed(let error):
             return "Failed to save card: \(error.localizedDescription)"
         }

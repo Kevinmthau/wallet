@@ -2,7 +2,7 @@ import SwiftUI
 import CoreData
 import os
 
-private enum CardListFilter: String, CaseIterable, Identifiable {
+enum CardListFilter: String, CaseIterable, Identifiable {
     case all
     case favorites
     case withBack
@@ -20,7 +20,7 @@ private enum CardListFilter: String, CaseIterable, Identifiable {
     }
 }
 
-private enum CardListSort: String, CaseIterable, Identifiable {
+enum CardListSort: String, CaseIterable, Identifiable {
     case recentlyUsed
     case nameAZ
     case nameZA
@@ -119,6 +119,8 @@ struct CardListView: View {
     @State private var showingAddCard = false
     @State private var showingSearch = false
     @State private var searchText = ""
+    @State private var debouncedSearchText = ""
+    @State private var searchDebounceTask: Task<Void, Never>?
     @GestureState private var pullOffset: CGFloat = 0
     @FocusState private var isSearchFocused: Bool
 
@@ -284,7 +286,7 @@ struct CardListView: View {
         .fullScreenCover(item: $selectedCard) { card in
             FullScreenCardView(
                 card: card,
-                onViewed: { markCardAccessed(card) },
+                onViewed: { markCardAccessed(card.objectID) },
                 onDelete: deleteCardFromViewer
             )
         }
@@ -298,8 +300,8 @@ struct CardListView: View {
         .onChange(of: categoryRawValue) { _, _ in
             refreshDisplayedCardsFetch()
         }
-        .onChange(of: searchText) { _, _ in
-            refreshDisplayedCardsFetch()
+        .onChange(of: searchText) { _, newValue in
+            scheduleSearchRefresh(for: newValue)
         }
     }
 
@@ -396,14 +398,18 @@ struct CardListView: View {
         }
     }
 
-    private var trimmedSearchText: String {
-        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    private var trimmedDebouncedSearchText: String {
+        debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func makeFetchPredicate() -> NSPredicate? {
+    static func makeFetchPredicate(
+        filter: CardListFilter,
+        category: CardCategory,
+        searchText: String
+    ) -> NSPredicate? {
         var predicates: [NSPredicate] = []
 
-        switch selectedFilter {
+        switch filter {
         case .all:
             break
         case .favorites:
@@ -411,9 +417,10 @@ struct CardListView: View {
         case .withBack:
             predicates.append(NSPredicate(format: "\(Card.Attributes.hasBackImage) == YES"))
         case .category:
-            predicates.append(NSPredicate(format: "\(Card.Attributes.categoryRaw) == %@", selectedCategory.rawValue))
+            predicates.append(NSPredicate(format: "\(Card.Attributes.categoryRaw) == %@", category.rawValue))
         }
 
+        let trimmedSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedSearchText.isEmpty {
             predicates.append(NSPredicate(
                 format: "(\(Card.Attributes.name) CONTAINS[cd] %@) OR (\(Card.Attributes.notes) CONTAINS[cd] %@)",
@@ -432,9 +439,37 @@ struct CardListView: View {
         }
     }
 
+    private func makeFetchPredicate() -> NSPredicate? {
+        Self.makeFetchPredicate(
+            filter: selectedFilter,
+            category: selectedCategory,
+            searchText: trimmedDebouncedSearchText
+        )
+    }
+
     private func refreshDisplayedCardsFetch() {
         displayedCards.nsPredicate = makeFetchPredicate()
         displayedCards.nsSortDescriptors = Self.sortDescriptors(for: selectedSort)
+    }
+
+    private func scheduleSearchRefresh(for searchText: String) {
+        searchDebounceTask?.cancel()
+
+        let trimmedSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSearchText.isEmpty else {
+            searchDebounceTask = nil
+            debouncedSearchText = ""
+            refreshDisplayedCardsFetch()
+            return
+        }
+
+        searchDebounceTask = Task { @MainActor in
+            let delay = UInt64(Constants.Search.debounceInterval * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled else { return }
+            debouncedSearchText = searchText
+            refreshDisplayedCardsFetch()
+        }
     }
 
     private func elasticOffset(_ drag: CGFloat) -> CGFloat {
@@ -442,16 +477,15 @@ struct CardListView: View {
         return Constants.Animation.ElasticStack.maxStretch * tanh(drag * Constants.Animation.ElasticStack.resistance)
     }
 
-    private func markCardAccessed(_ card: Card) {
-        cardStore.markAccessed(card)
+    private func markCardAccessed(_ objectID: NSManagedObjectID) {
+        cardStore.markAccessed(objectID: objectID)
     }
 
-    private func deleteCardFromViewer(_ card: Card) {
-        let cardToDelete = card
+    private func deleteCardFromViewer(_ objectID: NSManagedObjectID) {
         selectedCard = nil
 
         DispatchQueue.main.asyncAfter(deadline: .now() + Constants.Animation.dismissActionDelay) {
-            _ = cardStore.delete(cardToDelete)
+            _ = cardStore.delete(objectID: objectID)
         }
     }
 

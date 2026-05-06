@@ -20,10 +20,10 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
 | HD-004 | P1 | Done | Codex | Images/List UI | Reduce list decode pressure and main-actor binary reads |
 | HD-005 | P1 | Done | Codex | Images/Memory | Stop holding full-resolution images longer than needed |
 | HD-006 | P1 | Done | Codex | Images/OCR | Make image and OCR work bounded and cancellable |
-| HD-007 | P2 | Not Started | Unassigned | Core Data/UI actions | Use object IDs for delayed and async card actions |
-| HD-008 | P2 | Not Started | Unassigned | Search | Debounce search and reduce expensive note predicates |
-| HD-009 | P2 | Not Started | Unassigned | Persistence | Surface persistent store load failures |
-| HD-010 | P3 | Not Started | Unassigned | Tests/CI | Stabilize simulator test verification |
+| HD-007 | P2 | Done | Codex | Core Data/UI actions | Use object IDs for delayed and async card actions |
+| HD-008 | P2 | Done | Codex | Search | Debounce search and reduce expensive note predicates |
+| HD-009 | P2 | Done | Codex | Persistence | Surface persistent store load failures |
+| HD-010 | P3 | Blocked | Codex | Tests/CI | Stabilize simulator test verification |
 
 ## P0: Correctness and Data Safety
 
@@ -134,9 +134,9 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
 
 ### HD-007: Use Object IDs for Delayed and Async Card Actions
 
-- Status: `Not Started`
-- Owner: Unassigned
-- Target files: `Wallet/ViewModels/CardStore.swift`, `Wallet/Views/CardListView.swift`, `Wallet/Views/FullScreenCardView.swift`
+- Status: `Done`
+- Owner: Codex
+- Target files: `Wallet/ViewModels/CardStore.swift`, `Wallet/Views/CardListView.swift`, `Wallet/Views/FullScreenCardView.swift`, `Wallet/Views/CardDetailView.swift`, `Wallet/Views/CardFormView.swift`, `WalletTests/CardStoreTests.swift`
 - Problem: delayed delete/share/edit flows capture live `Card` managed objects. CloudKit merges, deletes, or invalidates can make those references stale or unsafe.
 - Intended fix: expose store APIs that accept `NSManagedObjectID` for delayed or async work and resolve objects inside the current context immediately before mutation/read.
 - Acceptance criteria:
@@ -146,12 +146,13 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
   - Tests cover deleting an object that is already gone by the time the delayed action runs.
 - Notes:
   - UI can still pass `Card` to purely synchronous display views where no delay/async boundary exists.
+  - 2026-05-06: Implemented object-ID based delete, favorite, access, display-image, share-image, and edit-save resolution. Delayed delete now resolves immediately before mutation, share/export resolves image data through `NSManagedObjectID`, and stale/deleted objects fail gracefully. Added tests for already-deleted object-ID delete and stale edit save.
 
 ### HD-008: Debounce Search and Reduce Expensive Note Predicates
 
-- Status: `Not Started`
-- Owner: Unassigned
-- Target files: `Wallet/Views/CardListView.swift`, `Wallet/Models/Persistence.swift`
+- Status: `Done`
+- Owner: Codex
+- Target files: `Wallet/Views/CardListView.swift`, `Wallet/Constants.swift`, `WalletTests/CardStoreTests.swift`
 - Problem: search refetches on every keystroke using `CONTAINS[cd]` against both name and notes. OCR-heavy notes can make this expensive.
 - Intended fix: debounce search input before updating the fetch predicate and consider a normalized searchable field if profiling shows note search remains expensive.
 - Acceptance criteria:
@@ -161,12 +162,13 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
   - Tests cover predicate generation for search/filter combinations.
 - Notes:
   - Start with debounce only; add schema/search-index changes only if needed.
+  - 2026-05-06: Implemented a 250 ms non-empty search debounce while keeping clear/whitespace search immediate. Extracted predicate generation for test coverage and added tests for category+search and whitespace search behavior.
 
 ### HD-009: Surface Persistent Store Load Failures
 
-- Status: `Not Started`
-- Owner: Unassigned
-- Target files: `Wallet/Models/Persistence.swift`, `Wallet/WalletApp.swift`
+- Status: `Done`
+- Owner: Codex
+- Target files: `Wallet/Models/Persistence.swift`, `Wallet/WalletApp.swift`, `WalletTests/CardStoreTests.swift`
 - Problem: persistent store load failures are only logged. The app continues with no visible recovery state.
 - Intended fix: expose store-load state from persistence setup and show a clear app-level error/recovery UI when the store cannot load.
 - Acceptance criteria:
@@ -176,13 +178,14 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
   - Tests cover failure-state propagation where feasible.
 - Notes:
   - Avoid destructive recovery actions until there is an export/backup story.
+  - 2026-05-06: Added observable persistent-store load state, an app-root failure view with practical recovery copy, and a test for load-failure propagation.
 
 ## P3: Verification and Tooling
 
 ### HD-010: Stabilize Simulator Test Verification
 
-- Status: `Not Started`
-- Owner: Unassigned
+- Status: `Blocked`
+- Owner: Codex
 - Target files: `scripts/test.sh`, `CLAUDE.md`
 - Problem: the last audit build compiled, but tests did not launch because CoreSimulator failed with Mach error `-308`, then CoreSimulatorService became unavailable on retry.
 - Intended fix: document the failure mode and harden the test script so it can recover or provide a precise operator action when simulator services are unavailable.
@@ -193,6 +196,8 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
   - A clean simulator environment can run the unit tests.
 - Notes:
   - This is an environment/tooling hardening item, not an app behavior defect by itself.
+  - 2026-05-06: Added `xcodebuild` log capture, CoreSimulator failure detection, and recovery guidance in `scripts/test.sh`; documented the known recovery flow in `CLAUDE.md`.
+  - 2026-05-06: Verified the failure path with `./scripts/test.sh`; it now prints a targeted recovery message. Full unit-test execution remains blocked locally because CoreSimulator cannot launch the test runner (`Application failed preflight checks` / Mach error `-308`). Verified compilation with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild build -project Wallet.xcodeproj -scheme Wallet -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/DerivedData`.
 
 ## Update Protocol
 

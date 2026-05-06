@@ -29,6 +29,8 @@ make test
 DESTINATION="platform=iOS Simulator,name=iPhone 16 Pro,OS=latest" ./scripts/test.sh
 ```
 
+If `./scripts/test.sh` reports that CoreSimulator could not launch the test runner, first quit Simulator and Xcode, run `xcrun simctl shutdown all`, and retry. If the failure includes Mach error `-308` or says CoreSimulatorService is unavailable, reboot macOS before retrying.
+
 ## Architecture Overview
 
 iOS card wallet app using SwiftUI + Core Data with CloudKit sync. Stores photos of membership cards, IDs, and insurance cards.

@@ -1,8 +1,10 @@
 import SwiftUI
+import CoreData
 import os
 
 struct CardDetailView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.managedObjectContext) private var context
     @Environment(CardStore.self) private var cardStore
 
     let card: Card
@@ -131,11 +133,11 @@ struct CardDetailView: View {
             .confirmationDialog("Delete Card", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
                 Button("Delete", role: .destructive) {
                     AppLogger.ui.info("Deleting card: \(card.name)")
-                    let cardToDelete = card
+                    let objectID = card.objectID
                     dismiss()
                     DispatchQueue.main.asyncAfter(deadline: .now() + Constants.Animation.dismissActionDelay) {
                         AppLogger.data.info("Executing card deletion")
-                        cardStore.delete(cardToDelete)
+                        cardStore.delete(objectID: objectID)
                     }
                 }
                 Button("Cancel", role: .cancel) {
@@ -159,15 +161,18 @@ struct CardDetailView: View {
 
     @MainActor
     private func loadDisplayImages() async {
+        let objectID = card.objectID
         frontDisplayImage = await CardImageRepository.shared.image(
-            for: card,
+            for: objectID,
             side: .front,
-            variant: .display
+            variant: .display,
+            in: context
         )
         backDisplayImage = await CardImageRepository.shared.image(
-            for: card,
+            for: objectID,
             side: .back,
-            variant: .display
+            variant: .display,
+            in: context
         )
     }
 }

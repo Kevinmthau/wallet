@@ -67,7 +67,18 @@ class CardStore {
 
     @discardableResult
     func delete(_ card: Card) -> Bool {
+        delete(objectID: card.objectID)
+    }
+
+    @discardableResult
+    func delete(objectID: NSManagedObjectID) -> Bool {
         prepareForImmediateSave()
+
+        guard let card = existingCard(for: objectID) else {
+            AppLogger.data.info("CardStore.delete: card already missing")
+            return true
+        }
+
         AppLogger.data.info("CardStore.delete: \(card.name)")
         card.touchUpdatedAt()
         context.delete(card)
@@ -76,15 +87,31 @@ class CardStore {
 
     @discardableResult
     func toggleFavorite(_ card: Card) -> Bool {
+        toggleFavorite(objectID: card.objectID)
+    }
+
+    @discardableResult
+    func toggleFavorite(objectID: NSManagedObjectID) -> Bool {
         prepareForImmediateSave()
+
+        guard let card = existingCard(for: objectID) else {
+            lastError = CardError.cardNotFound
+            AppLogger.data.error("CardStore.toggleFavorite failed: card not found")
+            return false
+        }
+
         card.toggleFavorite()
         return save()
     }
 
     func markAccessed(_ card: Card) {
+        markAccessed(objectID: card.objectID)
+    }
+
+    func markAccessed(objectID: NSManagedObjectID) {
         let accessedAt = Date()
-        card.updateLastAccessed(at: accessedAt)
-        pendingAccessUpdates[card.objectID] = accessedAt
+        existingCard(for: objectID)?.updateLastAccessed(at: accessedAt)
+        pendingAccessUpdates[objectID] = accessedAt
         scheduleAccessSave()
     }
 
@@ -99,6 +126,7 @@ class CardStore {
         notes: String? = nil,
         clearNotes: Bool = false
     ) async -> Bool {
+        let objectID = card.objectID
         prepareForImmediateSave()
 
         do {
@@ -112,7 +140,14 @@ class CardStore {
                 return try await CardImageProcessor.shared.prepareForStorage(backImage)
             }()
 
+            let frontImageData = try await processedFrontImage
+            let backImageData = try await processedBackImage
             let mutationDate = Date()
+            guard let card = existingCard(for: objectID) else {
+                lastError = CardError.cardNotFound
+                AppLogger.data.error("CardStore.updateCard failed: card not found")
+                return false
+            }
 
             if let name {
                 card.name = name
@@ -122,16 +157,16 @@ class CardStore {
                 card.category = category
                 card.markFieldUpdated(Card.Attributes.categoryRaw, at: mutationDate)
             }
-            if let processedFrontImage = try await processedFrontImage {
-                card.frontImageData = processedFrontImage
+            if let frontImageData {
+                card.frontImageData = frontImageData
                 card.markFieldUpdated(Card.Attributes.frontImageData, at: mutationDate)
             }
             if clearBackImage {
                 card.backImageData = nil
                 card.hasBackImage = false
                 card.markFieldUpdated(Card.Attributes.backImageData, at: mutationDate)
-            } else if let processedBackImage = try await processedBackImage {
-                card.backImageData = processedBackImage
+            } else if let backImageData {
+                card.backImageData = backImageData
                 card.hasBackImage = true
                 card.markFieldUpdated(Card.Attributes.backImageData, at: mutationDate)
             }
@@ -172,6 +207,20 @@ class CardStore {
             }
         }
         return true
+    }
+
+    private func existingCard(for objectID: NSManagedObjectID) -> Card? {
+        guard !objectID.isTemporaryID else { return nil }
+
+        do {
+            guard let card = try context.existingObject(with: objectID) as? Card,
+                  !card.isDeleted else {
+                return nil
+            }
+            return card
+        } catch {
+            return nil
+        }
     }
 
     private func scheduleAccessSave() {

@@ -9,6 +9,24 @@ DESTINATION="${DESTINATION:-}"
 DESTINATION_TIMEOUT="${DESTINATION_TIMEOUT:-20}"
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$ROOT_DIR/.build/DerivedData}"
 RESULT_BUNDLE_PATH="${RESULT_BUNDLE_PATH:-$ROOT_DIR/.build/TestResults/WalletTests-$(date +%Y%m%d-%H%M%S).xcresult}"
+XCODEBUILD_LOG_PATH="${XCODEBUILD_LOG_PATH:-$RESULT_BUNDLE_PATH.log}"
+
+SIMULATOR_FAILURE_PATTERN="CoreSimulatorService connection became invalid|CoreSimulatorService.*unavailable|Mach error -308|Application failed preflight checks|Simulator device failed to launch|simdiskimaged.*crashed|simdiskimaged.*not responding"
+
+print_simulator_recovery_message() {
+  echo "" >&2
+  echo "CoreSimulator could not launch the Wallet test runner." >&2
+  echo "Recommended recovery:" >&2
+  echo "  1. Quit Simulator and Xcode." >&2
+  echo "  2. Run: xcrun simctl shutdown all" >&2
+  echo "  3. Re-run: ./scripts/test.sh" >&2
+  echo "If CoreSimulatorService is unavailable or Mach error -308 repeats, reboot macOS and retry." >&2
+  echo "You can also pin a different simulator with: DESTINATION=\"id=<simulator-id>\" ./scripts/test.sh" >&2
+}
+
+contains_simulator_failure() {
+  grep -Eq "$SIMULATOR_FAILURE_PATTERN" "$1"
+}
 
 if [[ -z "${DEVELOPER_DIR:-}" && -d "/Applications/Xcode.app/Contents/Developer" ]]; then
   export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
@@ -27,14 +45,28 @@ if [[ ! -d "$PROJECT_PATH" ]]; then
 fi
 
 if [[ -z "$DESTINATION" ]]; then
-  discovered_id="$(xcodebuild -project "$PROJECT_PATH" -scheme "$SCHEME" -showdestinations 2>/dev/null \
-    | sed -n 's/.*platform:iOS Simulator, id:\([^,]*\),.*/\1/p' \
+  destination_discovery_log="$(mktemp "${TMPDIR:-/tmp}/wallet-destinations.XXXXXX.log")"
+  xcodebuild -project "$PROJECT_PATH" -scheme "$SCHEME" -showdestinations >"$destination_discovery_log" 2>&1 || true
+  if contains_simulator_failure "$destination_discovery_log"; then
+    cat "$destination_discovery_log" >&2
+    print_simulator_recovery_message
+    exit 1
+  fi
+
+  discovered_id="$(sed -n 's/.*platform:iOS Simulator, id:\([^,]*\),.*/\1/p' "$destination_discovery_log" \
     | grep -v "dvtdevice-DVTiOSDeviceSimulatorPlaceholder-iphonesimulator:placeholder" \
     | head -n 1 || true)"
 
   if [[ -z "$discovered_id" ]]; then
-    discovered_id="$(xcrun simctl list devices available 2>/dev/null \
-      | awk -F '[()]' '/(Shutdown|Booted)/ { print $2; exit }' \
+    simctl_discovery_log="$(mktemp "${TMPDIR:-/tmp}/wallet-simctl.XXXXXX.log")"
+    xcrun simctl list devices available >"$simctl_discovery_log" 2>&1 || true
+    if contains_simulator_failure "$simctl_discovery_log"; then
+      cat "$simctl_discovery_log" >&2
+      print_simulator_recovery_message
+      exit 1
+    fi
+
+    discovered_id="$(awk -F '[()]' '/(Shutdown|Booted)/ { print $2; exit }' "$simctl_discovery_log" \
       | head -n 1 || true)"
   fi
 
@@ -52,6 +84,8 @@ mkdir -p "$DERIVED_DATA_PATH" "$(dirname "$RESULT_BUNDLE_PATH")"
 
 echo "Running tests with destination: $DESTINATION"
 echo "DerivedData path: $DERIVED_DATA_PATH"
+echo "xcodebuild log: $XCODEBUILD_LOG_PATH"
+set +e
 xcodebuild \
   -project "$PROJECT_PATH" \
   -scheme "$SCHEME" \
@@ -59,4 +93,13 @@ xcodebuild \
   -destination-timeout "$DESTINATION_TIMEOUT" \
   -derivedDataPath "$DERIVED_DATA_PATH" \
   -resultBundlePath "$RESULT_BUNDLE_PATH" \
-  test
+  test 2>&1 | tee "$XCODEBUILD_LOG_PATH"
+xcodebuild_status="${PIPESTATUS[0]}"
+set -e
+
+if [[ "$xcodebuild_status" -ne 0 ]]; then
+  if contains_simulator_failure "$XCODEBUILD_LOG_PATH"; then
+    print_simulator_recovery_message
+  fi
+  exit "$xcodebuild_status"
+fi

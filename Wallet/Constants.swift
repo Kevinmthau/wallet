@@ -138,6 +138,13 @@ enum Constants {
         static let accessSaveDebounceInterval: TimeInterval = 5.0
     }
 
+    // MARK: - Search
+
+    enum Search {
+        /// Delay before applying non-empty search text to the fetch predicate
+        static let debounceInterval: TimeInterval = 0.25
+    }
+
     // MARK: - Image Enhancement
 
     enum Enhancement {

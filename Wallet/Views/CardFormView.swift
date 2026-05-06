@@ -8,6 +8,7 @@ enum CardFormMode {
 
 struct CardFormView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.managedObjectContext) private var context
     @Environment(CardStore.self) private var cardStore
 
     let mode: CardFormMode
@@ -229,18 +230,21 @@ struct CardFormView: View {
     @MainActor
     private func loadExistingImagesIfNeeded() async {
         guard case .edit(let card) = mode, !didLoadExistingImages else { return }
+        let objectID = card.objectID
 
         let frontImage = await CardImageRepository.shared.image(
-            for: card,
+            for: objectID,
             side: .front,
-            variant: .display
+            variant: .display,
+            in: context
         )
         guard !Task.isCancelled else { return }
 
         let backImage = await CardImageRepository.shared.image(
-            for: card,
+            for: objectID,
             side: .back,
-            variant: .display
+            variant: .display,
+            in: context
         )
         guard !Task.isCancelled else { return }
 
@@ -267,9 +271,10 @@ struct CardFormView: View {
         guard case .edit(let card) = mode else { return nil }
 
         return await CardImageRepository.shared.image(
-            for: card,
+            for: card.objectID,
             side: imageSide(for: target),
-            variant: .full
+            variant: .full,
+            in: context
         )
     }
 
@@ -284,6 +289,8 @@ struct CardFormView: View {
 }
 
 #Preview("Add Mode") {
+    let preview = PersistenceController.preview
     CardFormView(mode: .add)
-        .environment(CardStore(context: PersistenceController.preview.container.viewContext))
+        .environment(\.managedObjectContext, preview.container.viewContext)
+        .environment(CardStore(context: preview.container.viewContext))
 }
