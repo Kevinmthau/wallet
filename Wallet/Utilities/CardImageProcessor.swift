@@ -81,8 +81,8 @@ final class CardImageProcessor: @unchecked Sendable {
         }
 
         do {
-            return try await withImageProcessingTimeout(seconds: Constants.Scanner.textDetectionTimeout) {
-                try await ImageProcessingWorkQueue.shared.run { isCancelled in
+            return try await withImageProcessingTimeout(seconds: Constants.Scanner.textDetectionTimeout) { startTimeout in
+                try await ImageProcessingWorkQueue.shared.run(onStart: startTimeout) { isCancelled in
                     guard !isCancelled() else {
                         throw CancellationError()
                     }
@@ -114,8 +114,8 @@ final class CardImageProcessor: @unchecked Sendable {
         }
 
         do {
-            return try await withImageProcessingTimeout(seconds: Constants.Scanner.textDetectionTimeout) {
-                try await ImageProcessingWorkQueue.shared.run { isCancelled in
+            return try await withImageProcessingTimeout(seconds: Constants.Scanner.textDetectionTimeout) { startTimeout in
+                try await ImageProcessingWorkQueue.shared.run(onStart: startTimeout) { isCancelled in
                     guard !isCancelled() else {
                         throw CancellationError()
                     }

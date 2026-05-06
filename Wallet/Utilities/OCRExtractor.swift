@@ -27,8 +27,8 @@ final class OCRExtractor: @unchecked Sendable {
         }
 
         do {
-            return try await withImageProcessingTimeout(seconds: Constants.Scanner.ocrTimeout) {
-                try await ImageProcessingWorkQueue.shared.run { isCancelled in
+            return try await withImageProcessingTimeout(seconds: Constants.Scanner.ocrTimeout) { startTimeout in
+                try await ImageProcessingWorkQueue.shared.run(onStart: startTimeout) { isCancelled in
                     guard !isCancelled() else {
                         throw CancellationError()
                     }

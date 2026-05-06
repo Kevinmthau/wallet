@@ -1228,3 +1228,42 @@ final class CardStoreTests: XCTestCase {
         }
     }
 }
+
+final class ImageProcessingTimeoutTests: XCTestCase {
+    func testTimeoutDoesNotExpireWhileWorkIsQueued() async throws {
+        let queue = ImageProcessingWorkQueue(
+            maxConcurrentOperationCount: 1,
+            name: "wallet.tests.image-processing-timeout"
+        )
+        let blockerStarted = expectation(description: "blocking operation started")
+        let releaseBlocker = DispatchSemaphore(value: 0)
+
+        let blocker = Task {
+            try await queue.run { _ in
+                blockerStarted.fulfill()
+                releaseBlocker.wait()
+            }
+        }
+        defer {
+            releaseBlocker.signal()
+            blocker.cancel()
+        }
+
+        await fulfillment(of: [blockerStarted], timeout: 1.0)
+
+        let queuedWork = Task {
+            try await withImageProcessingTimeout(seconds: 0.05) { startTimeout in
+                try await queue.run(onStart: startTimeout) { _ in
+                    true
+                }
+            }
+        }
+
+        try await Task.sleep(nanoseconds: 150_000_000)
+        releaseBlocker.signal()
+
+        let queuedResult = try await queuedWork.value
+        XCTAssertTrue(queuedResult)
+        _ = try await blocker.value
+    }
+}

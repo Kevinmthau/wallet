@@ -14,13 +14,18 @@ enum ImageProcessingTimeoutError: Error {
 
 func withImageProcessingTimeout<Value>(
     seconds: TimeInterval,
-    operation: @escaping () async throws -> Value
+    operation: @escaping (_ startTimeout: @escaping () -> Void) async throws -> Value
 ) async throws -> Value {
-    try await withThrowingTaskGroup(of: Value.self) { group in
+    let startGate = ImageProcessingTimeoutStartGate()
+
+    return try await withThrowingTaskGroup(of: Value.self) { group in
         group.addTask {
-            try await operation()
+            try await operation {
+                startGate.markStarted()
+            }
         }
         group.addTask {
+            try await startGate.waitUntilStarted()
             let nanoseconds = UInt64(max(0, seconds) * 1_000_000_000)
             try await Task.sleep(nanoseconds: nanoseconds)
             throw ImageProcessingTimeoutError.timedOut
@@ -32,6 +37,31 @@ func withImageProcessingTimeout<Value>(
 
         group.cancelAll()
         return result
+    }
+}
+
+private final class ImageProcessingTimeoutStartGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var started = false
+
+    func markStarted() {
+        lock.lock()
+        started = true
+        lock.unlock()
+    }
+
+    func waitUntilStarted() async throws {
+        while !isStarted {
+            try Task.checkCancellation()
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+    }
+
+    private var isStarted: Bool {
+        lock.lock()
+        let value = started
+        lock.unlock()
+        return value
     }
 }
 
@@ -51,11 +81,12 @@ final class ImageProcessingWorkQueue: @unchecked Sendable {
     }
 
     func run<Value>(
+        onStart: (() -> Void)? = nil,
         _ operation: @escaping (_ isCancelled: @escaping () -> Bool) throws -> Value
     ) async throws -> Value {
         try Task.checkCancellation()
 
-        let workItem = ImageProcessingOperation(operation: operation)
+        let workItem = ImageProcessingOperation(operation: operation, onStart: onStart)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Value, any Error>) in
                 workItem.setContinuation(continuation)
@@ -69,12 +100,17 @@ final class ImageProcessingWorkQueue: @unchecked Sendable {
 
 private final class ImageProcessingOperation<Value>: Operation, @unchecked Sendable {
     private let operation: (_ isCancelled: @escaping () -> Bool) throws -> Value
+    private let onStart: (() -> Void)?
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Value, any Error>?
     private var didFinish = false
 
-    init(operation: @escaping (_ isCancelled: @escaping () -> Bool) throws -> Value) {
+    init(
+        operation: @escaping (_ isCancelled: @escaping () -> Bool) throws -> Value,
+        onStart: (() -> Void)?
+    ) {
         self.operation = operation
+        self.onStart = onStart
     }
 
     func setContinuation(_ continuation: CheckedContinuation<Value, any Error>) {
@@ -94,6 +130,8 @@ private final class ImageProcessingOperation<Value>: Operation, @unchecked Senda
             finish(.failure(CancellationError()))
             return
         }
+
+        onStart?()
 
         let result: Result<Value, any Error> = autoreleasepool {
             do {
