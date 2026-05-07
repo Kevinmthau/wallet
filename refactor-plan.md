@@ -23,7 +23,7 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
 | HD-007 | P2 | Done | Codex | Core Data/UI actions | Use object IDs for delayed and async card actions |
 | HD-008 | P2 | Done | Codex | Search | Debounce search and reduce expensive note predicates |
 | HD-009 | P2 | Done | Codex | Persistence | Surface persistent store load failures |
-| HD-010 | P3 | Blocked | Codex | Tests/CI | Stabilize simulator test verification |
+| HD-010 | P3 | Done | Codex | Tests/CI | Stabilize simulator test verification |
 
 ## P0: Correctness and Data Safety
 
@@ -184,9 +184,9 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
 
 ### HD-010: Stabilize Simulator Test Verification
 
-- Status: `Blocked`
+- Status: `Done`
 - Owner: Codex
-- Target files: `scripts/test.sh`, `CLAUDE.md`
+- Target files: `scripts/test.sh`, `CLAUDE.md`, `WalletTests/CardStoreTests.swift`
 - Problem: the last audit build compiled, but tests did not launch because CoreSimulator failed with Mach error `-308`, then CoreSimulatorService became unavailable on retry.
 - Intended fix: document the failure mode and harden the test script so it can recover or provide a precise operator action when simulator services are unavailable.
 - Acceptance criteria:
@@ -198,6 +198,7 @@ This file tracks high-value refactor and hardening work for the Wallet app. It i
   - This is an environment/tooling hardening item, not an app behavior defect by itself.
   - 2026-05-06: Added `xcodebuild` log capture, CoreSimulator failure detection, and recovery guidance in `scripts/test.sh`; documented the known recovery flow in `CLAUDE.md`.
   - 2026-05-06: Verified the failure path with `./scripts/test.sh`; it now prints a targeted recovery message. Full unit-test execution remains blocked locally because CoreSimulator cannot launch the test runner (`Application failed preflight checks` / Mach error `-308`). Verified compilation with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild build -project Wallet.xcodeproj -scheme Wallet -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/DerivedData`.
+  - 2026-05-06: Fixed local simulator verification by shutting down stale simulator state, making `scripts/test.sh` prefer the full Xcode `simctl` when `xcode-select` points at Command Line Tools, automatically resetting the selected simulator before test launch, and replacing the persistent-store failure test's `/dev/null` URL with a deterministic invalid file-parent URL. Verified with `./scripts/test.sh`; 42 tests passed.
 
 ## Update Protocol
 

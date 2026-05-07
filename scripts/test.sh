@@ -18,7 +18,7 @@ print_simulator_recovery_message() {
   echo "CoreSimulator could not launch the Wallet test runner." >&2
   echo "Recommended recovery:" >&2
   echo "  1. Quit Simulator and Xcode." >&2
-  echo "  2. Run: xcrun simctl shutdown all" >&2
+  echo "  2. Run: /Applications/Xcode.app/Contents/Developer/usr/bin/simctl shutdown all" >&2
   echo "  3. Re-run: ./scripts/test.sh" >&2
   echo "If CoreSimulatorService is unavailable or Mach error -308 repeats, reboot macOS and retry." >&2
   echo "You can also pin a different simulator with: DESTINATION=\"id=<simulator-id>\" ./scripts/test.sh" >&2
@@ -30,6 +30,16 @@ contains_simulator_failure() {
 
 if [[ -z "${DEVELOPER_DIR:-}" && -d "/Applications/Xcode.app/Contents/Developer" ]]; then
   export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
+fi
+
+if [[ -n "${DEVELOPER_DIR:-}" ]]; then
+  export PATH="$DEVELOPER_DIR/usr/bin:$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH"
+fi
+
+if [[ -n "${DEVELOPER_DIR:-}" && -x "$DEVELOPER_DIR/usr/bin/simctl" ]]; then
+  SIMCTL=("$DEVELOPER_DIR/usr/bin/simctl")
+else
+  SIMCTL=(xcrun simctl)
 fi
 
 if command -v xcodegen >/dev/null 2>&1 && [[ -f "$ROOT_DIR/project.yml" ]]; then
@@ -59,7 +69,7 @@ if [[ -z "$DESTINATION" ]]; then
 
   if [[ -z "$discovered_id" ]]; then
     simctl_discovery_log="$(mktemp "${TMPDIR:-/tmp}/wallet-simctl.log.XXXXXX")"
-    xcrun simctl list devices available >"$simctl_discovery_log" 2>&1 || true
+    "${SIMCTL[@]}" list devices available >"$simctl_discovery_log" 2>&1 || true
     if contains_simulator_failure "$simctl_discovery_log"; then
       cat "$simctl_discovery_log" >&2
       print_simulator_recovery_message
@@ -81,6 +91,12 @@ if [[ -z "$DESTINATION" ]]; then
 fi
 
 mkdir -p "$DERIVED_DATA_PATH" "$(dirname "$RESULT_BUNDLE_PATH")"
+
+if [[ "${SIMULATOR_PRETEST_SHUTDOWN:-1}" == "1" && "$DESTINATION" =~ ^id=([A-Fa-f0-9-]+)$ ]]; then
+  simulator_id="${BASH_REMATCH[1]}"
+  echo "Resetting simulator launch state for: $simulator_id"
+  "${SIMCTL[@]}" shutdown "$simulator_id" >/dev/null 2>&1 || true
+fi
 
 echo "Running tests with destination: $DESTINATION"
 echo "DerivedData path: $DERIVED_DATA_PATH"

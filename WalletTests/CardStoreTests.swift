@@ -657,7 +657,11 @@ final class CardStoreTests: XCTestCase {
     }
 
     func testPersistentStoreLoadFailureIsObservable() async throws {
-        let storeURL = URL(fileURLWithPath: "/dev/null/Wallet.sqlite")
+        let blockedParentURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: false)
+        XCTAssertTrue(FileManager.default.createFile(atPath: blockedParentURL.path, contents: Data()))
+        defer { try? FileManager.default.removeItem(at: blockedParentURL) }
+        let storeURL = blockedParentURL.appendingPathComponent("Wallet.sqlite")
         let failingPersistence = PersistenceController(storeURL: storeURL, cloudKitEnabled: false)
 
         for _ in 0..<50 where !failingPersistence.loadState.didFinishLoading {
