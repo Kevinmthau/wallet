@@ -44,7 +44,11 @@ struct CardFormView: View {
     }
 
     private var canSave: Bool {
-        !trimmedName.isEmpty && hasRequiredFrontImage && !isSaving && !isLoadingExistingImages
+        !trimmedName.isEmpty
+            && hasRequiredFrontImage
+            && !isSaving
+            && !isLoadingExistingImages
+            && !imageState.isEnhancing
     }
 
     private var isLoadingExistingImages: Bool {
