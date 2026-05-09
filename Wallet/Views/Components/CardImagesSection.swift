@@ -57,10 +57,7 @@ struct CardImagesSection: View {
                     }
                 },
                 onFile: {
-                    switch target {
-                    case .front: imageState.showingFrontFileImporter = true
-                    case .back: imageState.showingBackFileImporter = true
-                    }
+                    imageState.showFileImporter(for: target)
                 },
                 onEnhance: {
                     onEnhance(target)

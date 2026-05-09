@@ -20,16 +20,10 @@ struct CardPhotoPickerModifier: ViewModifier {
                 matching: .images
             )
             .fileImporter(
-                isPresented: $imageState.showingFrontFileImporter,
+                isPresented: $imageState.showingFileImporter,
                 allowedContentTypes: CardFileImageImporter.allowedContentTypes
             ) { result in
-                handleFileImport(result, for: .front)
-            }
-            .fileImporter(
-                isPresented: $imageState.showingBackFileImporter,
-                allowedContentTypes: CardFileImageImporter.allowedContentTypes
-            ) { result in
-                handleFileImport(result, for: .back)
+                handleFileImport(result, for: imageState.fileImporterTarget)
             }
             .onChange(of: imageState.selectedFrontItem) { _, item in
                 imageState.loadAndEnhanceImage(from: item, for: .front, isEditMode: isEditMode)
@@ -40,6 +34,8 @@ struct CardPhotoPickerModifier: ViewModifier {
     }
 
     private func handleFileImport(_ result: Result<URL, Error>, for target: CardImageState.ScanTarget) {
+        imageState.showingFileImporter = false
+
         switch result {
         case .success(let url):
             imageState.loadAndEnhanceImage(fromFileAt: url, for: target, isEditMode: isEditMode)

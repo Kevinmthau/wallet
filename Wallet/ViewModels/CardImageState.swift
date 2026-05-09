@@ -5,12 +5,15 @@ import UniformTypeIdentifiers
 
 enum CardFileImportError: LocalizedError {
     case unsupportedFileType
+    case unreadableFile
     case unreadablePDF
 
     var errorDescription: String? {
         switch self {
         case .unsupportedFileType:
             return "Choose an image file or PDF."
+        case .unreadableFile:
+            return "The selected file could not be read."
         case .unreadablePDF:
             return "The selected PDF could not be rendered."
         }
@@ -21,17 +24,17 @@ enum CardFileImageImporter {
     static let allowedContentTypes: [UTType] = [.image, .pdf]
 
     static func image(fromFileAt url: URL) async throws -> UIImage {
-        try await ImageProcessingWorkQueue.shared.run { isCancelled in
+        let hasSecurityScope = url.startAccessingSecurityScopedResource()
+        defer {
+            if hasSecurityScope {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        return try await ImageProcessingWorkQueue.shared.run { isCancelled in
             guard !isCancelled() else { throw CancellationError() }
 
-            let hasSecurityScope = url.startAccessingSecurityScopedResource()
-            defer {
-                if hasSecurityScope {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
-
-            let data = try Data(contentsOf: url)
+            let data = try readData(from: url, isCancelled: isCancelled)
             guard !isCancelled() else { throw CancellationError() }
             return try image(from: data, filenameExtension: url.pathExtension)
         }
@@ -47,6 +50,31 @@ enum CardFileImageImporter {
         }
 
         throw CardFileImportError.unsupportedFileType
+    }
+
+    private static func readData(from url: URL, isCancelled: @escaping () -> Bool) throws -> Data {
+        var coordinatorError: NSError?
+        var readResult: Result<Data, Error>?
+        let coordinator = NSFileCoordinator(filePresenter: nil)
+
+        coordinator.coordinate(readingItemAt: url, options: [], error: &coordinatorError) { coordinatedURL in
+            do {
+                guard !isCancelled() else { throw CancellationError() }
+                readResult = .success(try Data(contentsOf: coordinatedURL))
+            } catch {
+                readResult = .failure(error)
+            }
+        }
+
+        if let coordinatorError {
+            throw coordinatorError
+        }
+
+        guard let readResult else {
+            throw CardFileImportError.unreadableFile
+        }
+
+        return try readResult.get()
     }
 
     private static func isPDF(data: Data, filenameExtension: String?) -> Bool {
@@ -147,8 +175,8 @@ class CardImageState {
 
     // MARK: - File Importer State
 
-    var showingFrontFileImporter = false
-    var showingBackFileImporter = false
+    var showingFileImporter = false
+    var fileImporterTarget: ScanTarget = .front
     var importErrorMessage: String?
 
     // MARK: - UI State
@@ -323,6 +351,11 @@ class CardImageState {
                 AppLogger.ui.error("CardImageState: Failed to import file: \(error.localizedDescription)")
             }
         }
+    }
+
+    func showFileImporter(for target: ScanTarget) {
+        fileImporterTarget = target
+        showingFileImporter = true
     }
 
     // MARK: - Enhancement

@@ -139,6 +139,50 @@ final class CardStoreTests: XCTestCase {
         XCTAssertEqual(importedImage.pixelSize.height, sourceImage.pixelSize.height, accuracy: 1)
     }
 
+    func testFileImageImporterLoadsImageFromFileURL() async throws {
+        let sourceImage = makeImage(width: 900, height: 600, color: .blue)
+        let data = try XCTUnwrap(sourceImage.pngData())
+        let fileURL = makeTemporaryFileURL(filenameExtension: "png")
+        try data.write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let importedImage = try await CardFileImageImporter.image(fromFileAt: fileURL)
+
+        XCTAssertEqual(importedImage.pixelSize.width, sourceImage.pixelSize.width, accuracy: 1)
+        XCTAssertEqual(importedImage.pixelSize.height, sourceImage.pixelSize.height, accuracy: 1)
+    }
+
+    func testFileImportPresentationTracksSelectedTarget() {
+        let state = CardImageState()
+
+        state.showFileImporter(for: .back)
+
+        XCTAssertTrue(state.showingFileImporter)
+        XCTAssertEqual(state.fileImporterTarget, .back)
+    }
+
+    func testFileImportUpdatesImageState() async throws {
+        let sourceImage = makeImage(width: 640, height: 400, color: .green)
+        let data = try XCTUnwrap(sourceImage.pngData())
+        let fileURL = makeTemporaryFileURL(filenameExtension: "png")
+        try data.write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let state = CardImageState(
+            enhanceImageOperation: { image in image },
+            extractTextOperation: { _ in OCRExtractionResult(texts: ["Imported card"]) }
+        )
+
+        state.loadAndEnhanceImage(fromFileAt: fileURL, for: .front, isEditMode: true)
+        try await waitForEnhancement(toFinishIn: state)
+
+        let importedImage = try XCTUnwrap(state.frontImage)
+        XCTAssertEqual(importedImage.pixelSize.width, sourceImage.pixelSize.width, accuracy: 1)
+        XCTAssertEqual(importedImage.pixelSize.height, sourceImage.pixelSize.height, accuracy: 1)
+        XCTAssertTrue(state.frontChanged)
+        XCTAssertEqual(state.frontOCRResult?.texts, ["Imported card"])
+        XCTAssertNil(state.importErrorMessage)
+    }
+
     func testFileImageImporterRendersPDFPage() throws {
         let data = makePDFData(width: 612, height: 792)
 
@@ -1290,6 +1334,12 @@ final class CardStoreTests: XCTestCase {
             withIntermediateDirectories: true
         )
         return directory.appendingPathComponent("Wallet.sqlite")
+    }
+
+    private func makeTemporaryFileURL(filenameExtension: String) -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension(filenameExtension)
     }
 
     private func fetchCards(in context: NSManagedObjectContext? = nil) throws -> [Card] {
