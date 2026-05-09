@@ -11,21 +11,21 @@ struct CardImagesSection: View {
                 label: "Front of Card",
                 image: imageState.frontImage,
                 target: .front,
-                placeholder: "Scan front of card"
+                placeholder: "Add front of card"
             )
 
             imagePickerSection(
                 label: "Back of Card (Optional)",
                 image: imageState.backImage,
                 target: .back,
-                placeholder: "Scan back of card"
+                placeholder: "Add back of card"
             )
         } header: {
             Text("Card Images")
         } footer: {
             Text(isEditMode
-                 ? "Use Scan for best results. Tap Enhance to improve clarity."
-                 : "Use Scan for best results. Images are automatically enhanced for clarity.")
+                 ? "Scan, choose a photo, or import an image/PDF file. Tap Enhance to improve clarity."
+                 : "Scan, choose a photo, or import an image/PDF file. Images are automatically enhanced for clarity.")
         }
     }
 
@@ -50,12 +50,18 @@ struct CardImagesSection: View {
                     imageState.scannerTarget = target
                     imageState.showingScanner = true
                 },
-                onLibrary: isEditMode ? {
+                onLibrary: {
                     switch target {
                     case .front: imageState.showingFrontPicker = true
                     case .back: imageState.showingBackPicker = true
                     }
-                } : nil,
+                },
+                onFile: {
+                    switch target {
+                    case .front: imageState.showingFrontFileImporter = true
+                    case .back: imageState.showingBackFileImporter = true
+                    }
+                },
                 onEnhance: {
                     onEnhance(target)
                 },

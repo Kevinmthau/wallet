@@ -1,5 +1,100 @@
 import SwiftUI
 import PhotosUI
+import PDFKit
+import UniformTypeIdentifiers
+
+enum CardFileImportError: LocalizedError {
+    case unsupportedFileType
+    case unreadablePDF
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedFileType:
+            return "Choose an image file or PDF."
+        case .unreadablePDF:
+            return "The selected PDF could not be rendered."
+        }
+    }
+}
+
+enum CardFileImageImporter {
+    static let allowedContentTypes: [UTType] = [.image, .pdf]
+
+    static func image(fromFileAt url: URL) async throws -> UIImage {
+        try await ImageProcessingWorkQueue.shared.run { isCancelled in
+            guard !isCancelled() else { throw CancellationError() }
+
+            let hasSecurityScope = url.startAccessingSecurityScopedResource()
+            defer {
+                if hasSecurityScope {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            let data = try Data(contentsOf: url)
+            guard !isCancelled() else { throw CancellationError() }
+            return try image(from: data, filenameExtension: url.pathExtension)
+        }
+    }
+
+    static func image(from data: Data, filenameExtension: String?) throws -> UIImage {
+        if isPDF(data: data, filenameExtension: filenameExtension) {
+            return try renderFirstPDFPage(from: data)
+        }
+
+        if let image = UIImage(data: data) {
+            return image
+        }
+
+        throw CardFileImportError.unsupportedFileType
+    }
+
+    private static func isPDF(data: Data, filenameExtension: String?) -> Bool {
+        if let filenameExtension,
+           UTType(filenameExtension: filenameExtension)?.conforms(to: .pdf) == true {
+            return true
+        }
+
+        return data.starts(with: [0x25, 0x50, 0x44, 0x46])
+    }
+
+    private static func renderFirstPDFPage(from data: Data) throws -> UIImage {
+        guard let document = PDFDocument(data: data),
+              let page = document.page(at: 0) else {
+            throw CardFileImportError.unreadablePDF
+        }
+
+        let pageBounds = page.bounds(for: .cropBox)
+        guard pageBounds.width > 0, pageBounds.height > 0 else {
+            throw CardFileImportError.unreadablePDF
+        }
+
+        let maxDimension = CardImageProcessor.maxStorageDimension
+        let scale = min(
+            maxDimension / pageBounds.width,
+            maxDimension / pageBounds.height
+        )
+        let renderSize = CGSize(
+            width: pageBounds.width * scale,
+            height: pageBounds.height * scale
+        )
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1.0
+
+        return UIGraphicsImageRenderer(size: renderSize, format: format).image { rendererContext in
+            UIColor.white.setFill()
+            rendererContext.fill(CGRect(origin: .zero, size: renderSize))
+
+            let context = rendererContext.cgContext
+            context.saveGState()
+            context.translateBy(x: 0, y: renderSize.height)
+            context.scaleBy(x: scale, y: -scale)
+            context.translateBy(x: -pageBounds.minX, y: -pageBounds.minY)
+            page.draw(with: .cropBox, to: context)
+            context.restoreGState()
+        }
+    }
+}
 
 @Observable
 class CardImageState {
@@ -49,6 +144,12 @@ class CardImageState {
     var showingBackPicker = false
     var selectedFrontItem: PhotosPickerItem?
     var selectedBackItem: PhotosPickerItem?
+
+    // MARK: - File Importer State
+
+    var showingFrontFileImporter = false
+    var showingBackFileImporter = false
+    var importErrorMessage: String?
 
     // MARK: - UI State
 
@@ -197,6 +298,29 @@ class CardImageState {
                 return
             } catch {
                 AppLogger.ui.error("CardImageState: Failed to load image: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func loadAndEnhanceImage(fromFileAt url: URL, for target: ScanTarget, isEditMode: Bool) {
+        runCurrentImageTask(for: target) { [weak self] operationID in
+            do {
+                let image = try await CardFileImageImporter.image(fromFileAt: url)
+                guard let self, self.isCurrentOperation(operationID, for: target) else { return }
+
+                async let enhancedImage = self.enhanceImageOperation(image)
+                async let ocrResult = self.extractTextOperation(image)
+                let enhanced = await enhancedImage
+                let extractedText = await ocrResult
+
+                guard self.isCurrentOperation(operationID, for: target) else { return }
+                self.setImage(enhanced, for: target, isEditMode: isEditMode)
+                self.setOCRResult(extractedText, for: target)
+            } catch is CancellationError {
+                return
+            } catch {
+                self?.importErrorMessage = error.localizedDescription
+                AppLogger.ui.error("CardImageState: Failed to import file: \(error.localizedDescription)")
             }
         }
     }

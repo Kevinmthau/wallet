@@ -129,6 +129,29 @@ final class CardStoreTests: XCTestCase {
         XCTAssertNotNil(UIImage(data: data))
     }
 
+    func testFileImageImporterLoadsImageData() throws {
+        let sourceImage = makeImage(width: 900, height: 600, color: .blue)
+        let data = try XCTUnwrap(sourceImage.pngData())
+
+        let importedImage = try CardFileImageImporter.image(from: data, filenameExtension: "png")
+
+        XCTAssertEqual(importedImage.pixelSize.width, sourceImage.pixelSize.width, accuracy: 1)
+        XCTAssertEqual(importedImage.pixelSize.height, sourceImage.pixelSize.height, accuracy: 1)
+    }
+
+    func testFileImageImporterRendersPDFPage() throws {
+        let data = makePDFData(width: 612, height: 792)
+
+        let importedImage = try CardFileImageImporter.image(from: data, filenameExtension: "pdf")
+
+        XCTAssertGreaterThan(importedImage.pixelSize.width, 0)
+        XCTAssertGreaterThan(importedImage.pixelSize.height, 0)
+        XCTAssertLessThanOrEqual(
+            max(importedImage.pixelSize.width, importedImage.pixelSize.height),
+            CardImageProcessor.maxStorageDimension
+        )
+    }
+
     func testImageRepositoryDownsamplesThumbnailAndDisplayVariants() async throws {
         let image = makeImage(width: 5000, height: 2500, color: .blue)
         let data = try CardImageProcessor.compressForStorage(image)
@@ -1343,6 +1366,18 @@ final class CardStoreTests: XCTestCase {
         return renderer.image { ctx in
             color.setFill()
             ctx.fill(CGRect(origin: .zero, size: CGSize(width: width, height: height)))
+        }
+    }
+
+    private func makePDFData(width: CGFloat, height: CGFloat) -> Data {
+        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        return UIGraphicsPDFRenderer(bounds: bounds).pdfData { context in
+            context.beginPage()
+            UIColor.white.setFill()
+            context.fill(bounds)
+            UIColor.black.setStroke()
+            let insetBounds = bounds.insetBy(dx: 36, dy: 36)
+            context.cgContext.stroke(insetBounds)
         }
     }
 }

@@ -67,6 +67,10 @@ struct CardFormView: View {
         ].joined(separator: "|")
     }
 
+    private var importedOCRNotes: String {
+        imageState.collectOCRTexts().joined(separator: "\n")
+    }
+
     init(mode: CardFormMode) {
         self.mode = mode
         switch mode {
@@ -109,6 +113,13 @@ struct CardFormView: View {
             } message: {
                 Text(cardStore.lastError?.localizedDescription ?? "An unexpected error occurred.")
             }
+            .alert("Import Failed", isPresented: importErrorPresented) {
+                Button("OK") {
+                    imageState.importErrorMessage = nil
+                }
+            } message: {
+                Text(imageState.importErrorMessage ?? "The selected file could not be imported.")
+            }
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .cardPhotoPickers(imageState: imageState, isEditMode: isEditMode)
@@ -119,6 +130,9 @@ struct CardFormView: View {
             )
             .onDisappear {
                 imageState.cancelPendingTasks()
+            }
+            .onChange(of: importedOCRNotes) { _, _ in
+                updateNotesFromOCR()
             }
             .task(id: existingImageLoadIdentifier) {
                 await loadExistingImagesIfNeeded()
@@ -285,6 +299,17 @@ struct CardFormView: View {
         case .back:
             return .back
         }
+    }
+
+    private var importErrorPresented: Binding<Bool> {
+        Binding(
+            get: { imageState.importErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    imageState.importErrorMessage = nil
+                }
+            }
+        )
     }
 }
 

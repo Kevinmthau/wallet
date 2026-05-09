@@ -4,7 +4,8 @@ struct CardImagePickerButton: View {
     let image: UIImage?
     let placeholder: String
     let onScan: () -> Void
-    var onLibrary: (() -> Void)? = nil
+    let onLibrary: () -> Void
+    let onFile: () -> Void
     let onEnhance: () -> Void
     let onRemove: () -> Void
 
@@ -37,10 +38,10 @@ struct CardImagePickerButton: View {
             }
 
             HStack(spacing: 12) {
-                Button {
-                    onScan()
+                Menu {
+                    importActions
                 } label: {
-                    Label("Rescan", systemImage: "doc.viewfinder")
+                    Label("Replace", systemImage: "arrow.triangle.2.circlepath")
                         .font(.caption)
                 }
                 .buttonStyle(.bordered)
@@ -58,30 +59,32 @@ struct CardImagePickerButton: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        if let onLibrary = onLibrary {
-            Menu {
-                Button {
-                    onScan()
-                } label: {
-                    Label("Scan Card", systemImage: "doc.viewfinder")
-                }
+        Menu {
+            importActions
+        } label: {
+            placeholderLabel
+        }
+        .buttonStyle(.plain)
+    }
 
-                Button {
-                    onLibrary()
-                } label: {
-                    Label("Choose from Library", systemImage: "photo.on.rectangle")
-                }
-            } label: {
-                placeholderLabel
-            }
-            .buttonStyle(.plain)
-        } else {
-            Button {
-                onScan()
-            } label: {
-                placeholderLabel
-            }
-            .buttonStyle(.plain)
+    @ViewBuilder
+    private var importActions: some View {
+        Button {
+            onScan()
+        } label: {
+            Label("Scan Card", systemImage: "doc.viewfinder")
+        }
+
+        Button {
+            onLibrary()
+        } label: {
+            Label("Choose Photo", systemImage: "photo.on.rectangle")
+        }
+
+        Button {
+            onFile()
+        } label: {
+            Label("Choose File", systemImage: "folder")
         }
     }
 
