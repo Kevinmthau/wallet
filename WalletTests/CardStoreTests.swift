@@ -237,7 +237,7 @@ final class CardStoreTests: XCTestCase {
     }
 
     func testFileImportDoesNotCropTightlyFramedCardToDenseFullWidthPanel() async throws {
-        let panelRect = CGRect(x: 0, y: 225, width: 1000, height: 180)
+        let panelRect = CGRect(x: 0, y: 40, width: 1000, height: 340)
         let sourceImage = makeImageWithCardOnBackground(
             width: 1000,
             height: 630,

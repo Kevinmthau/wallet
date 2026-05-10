@@ -26,6 +26,7 @@ final class CardImageProcessor: @unchecked Sendable {
         static let tightFrameAspectTolerance: CGFloat = 0.18
         static let tightFrameTrimAspectTolerance: CGFloat = 0.06
         static let tightFrameInnerContentDimensionRatio: CGFloat = 0.5
+        static let tightFrameEdgeContentDimensionRatio: CGFloat = 0.65
         static let tightFrameSparseForegroundRatio: CGFloat = 0.5
         static let insetRectangleEdgeTolerance: CGFloat = 0.08
     }
@@ -100,13 +101,13 @@ final class CardImageProcessor: @unchecked Sendable {
             backgroundColor: backgroundColor
         )
             < BackgroundTrim.tightFrameSparseForegroundRatio
-        let isSmallEdgeSpanningCrop = isNearFullDimensionCrop
-            && min(normalizedCropRect.width, normalizedCropRect.height) < BackgroundTrim.tightFrameInnerContentDimensionRatio
+        let isEdgeSpanningInnerCrop = isNearFullDimensionCrop
+            && min(normalizedCropRect.width, normalizedCropRect.height) < BackgroundTrim.tightFrameEdgeContentDimensionRatio
         if isCardLikeFrame(image, tolerance: BackgroundTrim.tightFrameTrimAspectTolerance),
            !isCardLikeRectangle(normalizedCropRect, in: image),
            (isInsetRectangle(normalizedCropRect)
                 && min(normalizedCropRect.width, normalizedCropRect.height) < BackgroundTrim.tightFrameInnerContentDimensionRatio
-            || isSmallEdgeSpanningCrop
+            || isEdgeSpanningInnerCrop
             || isNearFullDimensionCrop && isSparseForegroundCrop) {
             return image
         }
@@ -410,7 +411,7 @@ final class CardImageProcessor: @unchecked Sendable {
                     || box.height > 1 - BackgroundTrim.insetRectangleEdgeTolerance)
             if isEdgeSpanningRectangle,
                !isCardLikeRectangle(box, in: image),
-               min(box.width, box.height) < BackgroundTrim.tightFrameInnerContentDimensionRatio {
+               min(box.width, box.height) < BackgroundTrim.tightFrameEdgeContentDimensionRatio {
                 return false
             }
 
