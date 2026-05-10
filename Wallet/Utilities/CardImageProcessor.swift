@@ -22,6 +22,9 @@ final class CardImageProcessor: @unchecked Sendable {
         static let minimumTrimmedAreaRatio: CGFloat = 0.06
         static let minimumAspectRatio: CGFloat = 0.35
         static let maximumAspectRatio: CGFloat = 3.2
+        static let tightFramePerspectiveAreaRatio: CGFloat = 0.45
+        static let tightFrameAspectTolerance: CGFloat = 0.18
+        static let insetRectangleEdgeTolerance: CGFloat = 0.08
     }
 
     // Use shared CIContext from ImageEnhancer (expensive to create, should be reused)
@@ -60,6 +63,7 @@ final class CardImageProcessor: @unchecked Sendable {
         let blankTrimmedImage = Self.trimUniformBackground(from: storageSizedImage)
 
         guard let observation = await detectRectangle(in: blankTrimmedImage),
+              Self.shouldApplyUploadPerspectiveCorrection(observation, in: blankTrimmedImage),
               let correctedImage = await correctPerspectiveAsync(
                 image: blankTrimmedImage,
                 observation: observation
@@ -362,6 +366,47 @@ final class CardImageProcessor: @unchecked Sendable {
             width: CGFloat(cropWidth),
             height: CGFloat(cropHeight)
         )
+    }
+
+    private static func shouldApplyUploadPerspectiveCorrection(
+        _ observation: VNRectangleObservation,
+        in image: UIImage
+    ) -> Bool {
+        let box = observation.boundingBox
+        let areaRatio = box.width * box.height
+
+        if isCardLikeFrame(image), isInsetRectangle(box), !isCardLikeRectangle(box) {
+            return areaRatio >= BackgroundTrim.tightFramePerspectiveAreaRatio
+        }
+
+        return true
+    }
+
+    private static func isCardLikeFrame(_ image: UIImage) -> Bool {
+        let pixelSize = image.pixelSize
+        guard pixelSize.width > 0, pixelSize.height > 0 else {
+            return false
+        }
+
+        let aspectRatio = max(pixelSize.width / pixelSize.height, pixelSize.height / pixelSize.width)
+        return abs(aspectRatio - Constants.CardLayout.aspectRatio) <= BackgroundTrim.tightFrameAspectTolerance
+    }
+
+    private static func isCardLikeRectangle(_ box: CGRect) -> Bool {
+        guard box.width > 0, box.height > 0 else {
+            return false
+        }
+
+        let aspectRatio = max(box.width / box.height, box.height / box.width)
+        return abs(aspectRatio - Constants.CardLayout.aspectRatio) <= BackgroundTrim.tightFrameAspectTolerance
+    }
+
+    private static func isInsetRectangle(_ box: CGRect) -> Bool {
+        let tolerance = BackgroundTrim.insetRectangleEdgeTolerance
+        return box.minX > tolerance
+            && box.minY > tolerance
+            && (1 - box.maxX) > tolerance
+            && (1 - box.maxY) > tolerance
     }
 
     private static func averageCornerColor(in buffer: PixelBuffer) -> PixelSample {

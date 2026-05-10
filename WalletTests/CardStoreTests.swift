@@ -212,6 +212,25 @@ final class CardStoreTests: XCTestCase {
         )
     }
 
+    func testFileImportDoesNotCropTightlyFramedCardToInnerBarcode() async throws {
+        let sourceImage = makeTightlyFramedCardWithBarcode(width: 1000, height: 630)
+        let data = try XCTUnwrap(sourceImage.pngData())
+        let fileURL = makeTemporaryFileURL(filenameExtension: "png")
+        try data.write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let state = CardImageState(
+            enhanceImageOperation: { image in image },
+            extractTextOperation: { _ in OCRExtractionResult(texts: []) }
+        )
+
+        state.loadAndEnhanceImage(fromFileAt: fileURL, for: .front, isEditMode: true)
+        try await waitForEnhancement(toFinishIn: state)
+
+        let importedImage = try XCTUnwrap(state.frontImage)
+        XCTAssertEqual(importedImage.pixelSize.width, sourceImage.pixelSize.width, accuracy: 1)
+        XCTAssertEqual(importedImage.pixelSize.height, sourceImage.pixelSize.height, accuracy: 1)
+    }
+
     func testFileImageImporterRendersPDFPage() throws {
         let data = makePDFData(width: 612, height: 792)
 
@@ -1491,6 +1510,39 @@ final class CardStoreTests: XCTestCase {
             UIColor.black.setStroke()
             context.cgContext.setLineWidth(2)
             context.cgContext.stroke(cardRect)
+        }
+    }
+
+    private func makeTightlyFramedCardWithBarcode(width: CGFloat, height: CGFloat) -> UIImage {
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1.0
+        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        let barcodeRect = CGRect(
+            x: width * 0.16,
+            y: height * 0.62,
+            width: width * 0.68,
+            height: height * 0.16
+        )
+
+        return UIGraphicsImageRenderer(size: bounds.size, format: format).image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(bounds)
+
+            UIColor.white.setFill()
+            context.fill(barcodeRect)
+
+            UIColor.black.setStroke()
+            context.cgContext.setLineWidth(2)
+            context.cgContext.stroke(barcodeRect)
+
+            for index in 0..<16 {
+                let x = barcodeRect.minX + CGFloat(index) * barcodeRect.width / 16
+                let lineWidth: CGFloat = index.isMultiple(of: 3) ? 5 : 2
+                context.cgContext.setLineWidth(lineWidth)
+                context.cgContext.move(to: CGPoint(x: x, y: barcodeRect.minY + 8))
+                context.cgContext.addLine(to: CGPoint(x: x, y: barcodeRect.maxY - 8))
+                context.cgContext.strokePath()
+            }
         }
     }
 
