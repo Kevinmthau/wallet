@@ -26,6 +26,7 @@ final class CardImageProcessor: @unchecked Sendable {
         static let tightFrameAspectTolerance: CGFloat = 0.18
         static let tightFrameTrimAspectTolerance: CGFloat = 0.06
         static let tightFrameInnerContentDimensionRatio: CGFloat = 0.5
+        static let tightFrameSparseForegroundRatio: CGFloat = 0.5
         static let insetRectangleEdgeTolerance: CGFloat = 0.08
     }
 
@@ -90,12 +91,23 @@ final class CardImageProcessor: @unchecked Sendable {
             width: analysisCropRect.width / CGFloat(analysisBuffer.width),
             height: analysisCropRect.height / CGFloat(analysisBuffer.height)
         )
+        let isNearFullDimensionCrop = normalizedCropRect.width > 1 - BackgroundTrim.insetRectangleEdgeTolerance
+            || normalizedCropRect.height > 1 - BackgroundTrim.insetRectangleEdgeTolerance
+        let backgroundColor = averageCornerColor(in: analysisBuffer)
+        let isSparseForegroundCrop = foregroundCoverageRatio(
+            in: analysisBuffer,
+            cropRect: analysisCropRect,
+            backgroundColor: backgroundColor
+        )
+            < BackgroundTrim.tightFrameSparseForegroundRatio
+        let isSmallEdgeSpanningCrop = isNearFullDimensionCrop
+            && min(normalizedCropRect.width, normalizedCropRect.height) < BackgroundTrim.tightFrameInnerContentDimensionRatio
         if isCardLikeFrame(image, tolerance: BackgroundTrim.tightFrameTrimAspectTolerance),
            !isCardLikeRectangle(normalizedCropRect, in: image),
            (isInsetRectangle(normalizedCropRect)
                 && min(normalizedCropRect.width, normalizedCropRect.height) < BackgroundTrim.tightFrameInnerContentDimensionRatio
-            || normalizedCropRect.width > 1 - BackgroundTrim.insetRectangleEdgeTolerance
-            || normalizedCropRect.height > 1 - BackgroundTrim.insetRectangleEdgeTolerance) {
+            || isSmallEdgeSpanningCrop
+            || isNearFullDimensionCrop && isSparseForegroundCrop) {
             return image
         }
 
@@ -392,8 +404,19 @@ final class CardImageProcessor: @unchecked Sendable {
         let box = observation.boundingBox
         let areaRatio = box.width * box.height
 
-        if isCardLikeFrame(image), isInsetRectangle(box) {
-            return areaRatio >= BackgroundTrim.tightFramePerspectiveAreaRatio
+        if isCardLikeFrame(image) {
+            let isEdgeSpanningRectangle = !isInsetRectangle(box)
+                && (box.width > 1 - BackgroundTrim.insetRectangleEdgeTolerance
+                    || box.height > 1 - BackgroundTrim.insetRectangleEdgeTolerance)
+            if isEdgeSpanningRectangle,
+               !isCardLikeRectangle(box, in: image),
+               min(box.width, box.height) < BackgroundTrim.tightFrameInnerContentDimensionRatio {
+                return false
+            }
+
+            if isInsetRectangle(box) {
+                return areaRatio >= BackgroundTrim.tightFramePerspectiveAreaRatio
+            }
         }
 
         return true
@@ -478,6 +501,34 @@ final class CardImageProcessor: @unchecked Sendable {
             blue: blue / count,
             alpha: alpha / count
         )
+    }
+
+    private static func foregroundCoverageRatio(
+        in buffer: PixelBuffer,
+        cropRect: CGRect,
+        backgroundColor: PixelSample
+    ) -> CGFloat {
+        let minX = max(0, Int(cropRect.minX))
+        let minY = max(0, Int(cropRect.minY))
+        let maxX = min(buffer.width, Int(cropRect.maxX))
+        let maxY = min(buffer.height, Int(cropRect.maxY))
+        var foregroundCount = 0
+        var totalCount = 0
+
+        for y in minY..<maxY {
+            for x in minX..<maxX {
+                totalCount += 1
+                if isForeground(buffer.color(atX: x, y: y), comparedTo: backgroundColor) {
+                    foregroundCount += 1
+                }
+            }
+        }
+
+        guard totalCount > 0 else {
+            return 0
+        }
+
+        return CGFloat(foregroundCount) / CGFloat(totalCount)
     }
 
     private static func isForeground(_ color: PixelSample, comparedTo background: PixelSample) -> Bool {

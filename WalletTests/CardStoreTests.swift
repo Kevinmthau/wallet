@@ -212,6 +212,56 @@ final class CardStoreTests: XCTestCase {
         )
     }
 
+    func testFileImportCropsOneAxisWhitespaceOnCardAspectImage() async throws {
+        let cardRect = CGRect(x: 0, y: 100, width: 1000, height: 430)
+        let sourceImage = makeImageWithCardOnBackground(
+            width: 1000,
+            height: 630,
+            cardRect: cardRect
+        )
+        let data = try XCTUnwrap(sourceImage.pngData())
+        let fileURL = makeTemporaryFileURL(filenameExtension: "png")
+        try data.write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let state = CardImageState(
+            enhanceImageOperation: { image in image },
+            extractTextOperation: { _ in OCRExtractionResult(texts: []) }
+        )
+
+        state.loadAndEnhanceImage(fromFileAt: fileURL, for: .front, isEditMode: true)
+        try await waitForEnhancement(toFinishIn: state)
+
+        let importedImage = try XCTUnwrap(state.frontImage)
+        XCTAssertGreaterThan(importedImage.pixelSize.width, sourceImage.pixelSize.width * 0.95)
+        XCTAssertLessThan(importedImage.pixelSize.height, sourceImage.pixelSize.height * 0.85)
+    }
+
+    func testFileImportDoesNotCropTightlyFramedCardToDenseFullWidthPanel() async throws {
+        let panelRect = CGRect(x: 0, y: 225, width: 1000, height: 180)
+        let sourceImage = makeImageWithCardOnBackground(
+            width: 1000,
+            height: 630,
+            cardRect: panelRect,
+            cardColor: .systemBlue,
+            backgroundColor: .white
+        )
+        let data = try XCTUnwrap(sourceImage.pngData())
+        let fileURL = makeTemporaryFileURL(filenameExtension: "png")
+        try data.write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let state = CardImageState(
+            enhanceImageOperation: { image in image },
+            extractTextOperation: { _ in OCRExtractionResult(texts: []) }
+        )
+
+        state.loadAndEnhanceImage(fromFileAt: fileURL, for: .front, isEditMode: true)
+        try await waitForEnhancement(toFinishIn: state)
+
+        let importedImage = try XCTUnwrap(state.frontImage)
+        XCTAssertEqual(importedImage.pixelSize.width, sourceImage.pixelSize.width, accuracy: 1)
+        XCTAssertEqual(importedImage.pixelSize.height, sourceImage.pixelSize.height, accuracy: 1)
+    }
+
     func testFileImportDoesNotCropTightlyFramedCardToInnerBarcode() async throws {
         let sourceImage = makeTightlyFramedCardWithBarcode(width: 1000, height: 630)
         let data = try XCTUnwrap(sourceImage.pngData())
