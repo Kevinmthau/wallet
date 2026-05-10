@@ -9,6 +9,21 @@ final class CardImageProcessor: @unchecked Sendable {
     /// Maximum image dimension before resizing
     static let maxStorageDimension: CGFloat = 3072
 
+    private enum BackgroundTrim {
+        static let analysisMaxDimension: CGFloat = 768
+        static let cornerSampleRatio: CGFloat = 0.04
+        static let colorDistanceThreshold: CGFloat = 34
+        static let alphaDistanceWeight: CGFloat = 0.5
+        static let alphaThreshold: CGFloat = 16
+        static let cropPaddingRatio: CGFloat = 0.02
+        static let minimumContentWidthRatio: CGFloat = 0.25
+        static let minimumContentHeightRatio: CGFloat = 0.12
+        static let minimumTrimRatio: CGFloat = 0.04
+        static let minimumTrimmedAreaRatio: CGFloat = 0.06
+        static let minimumAspectRatio: CGFloat = 0.35
+        static let maximumAspectRatio: CGFloat = 3.2
+    }
+
     // Use shared CIContext from ImageEnhancer (expensive to create, should be reused)
     private let context = ImageProcessingContext.shared
 
@@ -35,6 +50,56 @@ final class CardImageProcessor: @unchecked Sendable {
 
     static func resizeIfNeeded(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
         CardImageRepository.resizeIfNeeded(image, maxDimension: maxDimension)
+    }
+
+    /// Normalizes imported images and rendered documents so saved card images
+    /// contain the card instead of surrounding page/photo whitespace.
+    func cropToCardContentAsync(_ image: UIImage) async -> UIImage {
+        let orientedImage = fixImageOrientation(image)
+        let storageSizedImage = Self.resizeIfNeeded(orientedImage, maxDimension: Self.maxStorageDimension)
+        let blankTrimmedImage = Self.trimUniformBackground(from: storageSizedImage)
+
+        guard let observation = await detectRectangle(in: blankTrimmedImage),
+              let correctedImage = await correctPerspectiveAsync(
+                image: blankTrimmedImage,
+                observation: observation
+              ) else {
+            return await ensureProperOrientationAsync(blankTrimmedImage)
+        }
+
+        return Self.trimUniformBackground(from: correctedImage)
+    }
+
+    private static func trimUniformBackground(from image: UIImage) -> UIImage {
+        let analysisImage = resizeIfNeeded(image, maxDimension: BackgroundTrim.analysisMaxDimension)
+        guard let originalCGImage = image.cgImage,
+              let analysisBuffer = PixelBuffer(image: analysisImage),
+              let analysisCropRect = uniformBackgroundCropRect(in: analysisBuffer) else {
+            return image
+        }
+
+        let scaleX = CGFloat(originalCGImage.width) / CGFloat(analysisBuffer.width)
+        let scaleY = CGFloat(originalCGImage.height) / CGFloat(analysisBuffer.height)
+        let cropRect = CGRect(
+            x: floor(analysisCropRect.minX * scaleX),
+            y: floor(analysisCropRect.minY * scaleY),
+            width: ceil(analysisCropRect.width * scaleX),
+            height: ceil(analysisCropRect.height * scaleY)
+        )
+        .intersection(CGRect(
+            x: 0,
+            y: 0,
+            width: CGFloat(originalCGImage.width),
+            height: CGFloat(originalCGImage.height)
+        ))
+
+        guard cropRect.width >= 1,
+              cropRect.height >= 1,
+              let croppedImage = originalCGImage.cropping(to: cropRect) else {
+            return image
+        }
+
+        return UIImage(cgImage: croppedImage, scale: image.scale, orientation: image.imageOrientation)
     }
 
     private static func compress(_ image: UIImage) throws -> Data {
@@ -242,6 +307,204 @@ final class CardImageProcessor: @unchecked Sendable {
 
     // MARK: - Private Helpers
 
+    private static func uniformBackgroundCropRect(in buffer: PixelBuffer) -> CGRect? {
+        let backgroundColor = averageCornerColor(in: buffer)
+        var minX = buffer.width
+        var minY = buffer.height
+        var maxX = -1
+        var maxY = -1
+
+        for y in 0..<buffer.height {
+            for x in 0..<buffer.width {
+                let color = buffer.color(atX: x, y: y)
+                guard isForeground(color, comparedTo: backgroundColor) else { continue }
+
+                minX = min(minX, x)
+                minY = min(minY, y)
+                maxX = max(maxX, x)
+                maxY = max(maxY, y)
+            }
+        }
+
+        guard maxX >= minX, maxY >= minY else {
+            return nil
+        }
+
+        let padding = max(2, Int(CGFloat(max(buffer.width, buffer.height)) * BackgroundTrim.cropPaddingRatio))
+        minX = max(0, minX - padding)
+        minY = max(0, minY - padding)
+        maxX = min(buffer.width - 1, maxX + padding)
+        maxY = min(buffer.height - 1, maxY + padding)
+
+        let cropWidth = maxX - minX + 1
+        let cropHeight = maxY - minY + 1
+        let widthRatio = CGFloat(cropWidth) / CGFloat(buffer.width)
+        let heightRatio = CGFloat(cropHeight) / CGFloat(buffer.height)
+        let aspectRatio = CGFloat(cropWidth) / CGFloat(cropHeight)
+        let horizontalTrimRatio = CGFloat(minX + (buffer.width - 1 - maxX)) / CGFloat(buffer.width)
+        let verticalTrimRatio = CGFloat(minY + (buffer.height - 1 - maxY)) / CGFloat(buffer.height)
+        let cropArea = CGFloat(cropWidth * cropHeight)
+        let totalArea = CGFloat(buffer.width * buffer.height)
+        let trimmedAreaRatio = 1 - cropArea / totalArea
+
+        guard widthRatio >= BackgroundTrim.minimumContentWidthRatio,
+              heightRatio >= BackgroundTrim.minimumContentHeightRatio,
+              aspectRatio >= BackgroundTrim.minimumAspectRatio,
+              aspectRatio <= BackgroundTrim.maximumAspectRatio,
+              max(horizontalTrimRatio, verticalTrimRatio) >= BackgroundTrim.minimumTrimRatio,
+              trimmedAreaRatio >= BackgroundTrim.minimumTrimmedAreaRatio else {
+            return nil
+        }
+
+        return CGRect(
+            x: CGFloat(minX),
+            y: CGFloat(minY),
+            width: CGFloat(cropWidth),
+            height: CGFloat(cropHeight)
+        )
+    }
+
+    private static func averageCornerColor(in buffer: PixelBuffer) -> PixelSample {
+        let sampleWidth = min(
+            buffer.width,
+            max(2, Int(CGFloat(buffer.width) * BackgroundTrim.cornerSampleRatio))
+        )
+        let sampleHeight = min(
+            buffer.height,
+            max(2, Int(CGFloat(buffer.height) * BackgroundTrim.cornerSampleRatio))
+        )
+        let regions = [
+            (x: 0..<sampleWidth, y: 0..<sampleHeight),
+            (x: (buffer.width - sampleWidth)..<buffer.width, y: 0..<sampleHeight),
+            (x: 0..<sampleWidth, y: (buffer.height - sampleHeight)..<buffer.height),
+            (x: (buffer.width - sampleWidth)..<buffer.width, y: (buffer.height - sampleHeight)..<buffer.height)
+        ]
+
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        var count: CGFloat = 0
+
+        for region in regions {
+            for y in region.y {
+                for x in region.x {
+                    let color = buffer.color(atX: x, y: y)
+                    red += color.red
+                    green += color.green
+                    blue += color.blue
+                    alpha += color.alpha
+                    count += 1
+                }
+            }
+        }
+
+        guard count > 0 else {
+            return PixelSample(red: 255, green: 255, blue: 255, alpha: 255)
+        }
+
+        return PixelSample(
+            red: red / count,
+            green: green / count,
+            blue: blue / count,
+            alpha: alpha / count
+        )
+    }
+
+    private static func isForeground(_ color: PixelSample, comparedTo background: PixelSample) -> Bool {
+        guard color.alpha > BackgroundTrim.alphaThreshold else {
+            return false
+        }
+
+        let redDelta = color.red - background.red
+        let greenDelta = color.green - background.green
+        let blueDelta = color.blue - background.blue
+        let alphaDelta = (color.alpha - background.alpha) * BackgroundTrim.alphaDistanceWeight
+        let distance = (redDelta * redDelta
+            + greenDelta * greenDelta
+            + blueDelta * blueDelta
+            + alphaDelta * alphaDelta
+        ).squareRoot()
+
+        return distance > BackgroundTrim.colorDistanceThreshold
+    }
+
+    private struct PixelSample {
+        let red: CGFloat
+        let green: CGFloat
+        let blue: CGFloat
+        let alpha: CGFloat
+    }
+
+    private struct PixelBuffer {
+        let width: Int
+        let height: Int
+
+        private let bytes: [UInt8]
+        private let bytesPerPixel = 4
+        private let bytesPerRow: Int
+
+        init?(image: UIImage) {
+            guard let cgImage = image.cgImage else {
+                return nil
+            }
+
+            let width = cgImage.width
+            let height = cgImage.height
+            guard width > 0, height > 0 else {
+                return nil
+            }
+
+            let bytesPerPixel = 4
+            let bytesPerRow = width * bytesPerPixel
+            var bytes = [UInt8](repeating: 0, count: bytesPerRow * height)
+            let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
+                | CGImageAlphaInfo.premultipliedLast.rawValue
+
+            let didDraw = bytes.withUnsafeMutableBytes { bufferPointer -> Bool in
+                guard let baseAddress = bufferPointer.baseAddress,
+                      let context = CGContext(
+                        data: baseAddress,
+                        width: width,
+                        height: height,
+                        bitsPerComponent: 8,
+                        bytesPerRow: bytesPerRow,
+                        space: CGColorSpaceCreateDeviceRGB(),
+                        bitmapInfo: bitmapInfo
+                      ) else {
+                    return false
+                }
+
+                context.draw(cgImage, in: CGRect(
+                    x: 0,
+                    y: 0,
+                    width: CGFloat(width),
+                    height: CGFloat(height)
+                ))
+                return true
+            }
+
+            guard didDraw else {
+                return nil
+            }
+
+            self.width = width
+            self.height = height
+            self.bytes = bytes
+            self.bytesPerRow = bytesPerRow
+        }
+
+        func color(atX x: Int, y: Int) -> PixelSample {
+            let offset = y * bytesPerRow + x * bytesPerPixel
+            return PixelSample(
+                red: CGFloat(bytes[offset]),
+                green: CGFloat(bytes[offset + 1]),
+                blue: CGFloat(bytes[offset + 2]),
+                alpha: CGFloat(bytes[offset + 3])
+            )
+        }
+    }
+
     private func ensureProperOrientationSynchronously(
         _ image: UIImage,
         ciImage: CIImage,
@@ -310,8 +573,10 @@ final class CardImageProcessor: @unchecked Sendable {
 
             request.minimumAspectRatio = Constants.Scanner.minimumAspectRatio
             request.maximumAspectRatio = Constants.Scanner.maximumAspectRatio
+            request.minimumSize = Constants.Scanner.minimumSize
             request.minimumConfidence = Constants.Scanner.minimumConfidence
             request.maximumObservations = 1
+            request.quadratureTolerance = Constants.Scanner.quadratureTolerance
 
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
             try handler.perform([request])

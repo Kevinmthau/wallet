@@ -133,6 +133,7 @@ class CardImageState {
         case front, back
     }
 
+    typealias UploadedImagePreparationOperation = (UIImage) async -> UIImage
     typealias ImageEnhancementOperation = (UIImage) async -> UIImage
     typealias TextExtractionOperation = (UIImage) async -> OCRExtractionResult
 
@@ -151,6 +152,7 @@ class CardImageState {
 
     @ObservationIgnored private let enhanceImageOperation: ImageEnhancementOperation
     @ObservationIgnored private let enhanceDocumentImageOperation: ImageEnhancementOperation
+    @ObservationIgnored private let prepareUploadedImageOperation: UploadedImagePreparationOperation
     @ObservationIgnored private let extractTextOperation: TextExtractionOperation
 
     // MARK: - OCR Results
@@ -194,6 +196,9 @@ class CardImageState {
         enhanceDocumentImageOperation: @escaping ImageEnhancementOperation = { image in
             await ImageEnhancer.shared.enhanceAsDocumentAsync(image)
         },
+        prepareUploadedImageOperation: @escaping UploadedImagePreparationOperation = { image in
+            await CardImageProcessor.shared.cropToCardContentAsync(image)
+        },
         extractTextOperation: @escaping TextExtractionOperation = { image in
             await OCRExtractor.shared.extractText(from: image)
         }
@@ -202,6 +207,7 @@ class CardImageState {
         self.backImage = backImage
         self.enhanceImageOperation = enhanceImageOperation
         self.enhanceDocumentImageOperation = enhanceDocumentImageOperation
+        self.prepareUploadedImageOperation = prepareUploadedImageOperation
         self.extractTextOperation = extractTextOperation
     }
 
@@ -314,8 +320,11 @@ class CardImageState {
                 }
                 guard let self, self.isCurrentOperation(operationID, for: target) else { return }
 
-                async let enhancedImage = self.enhanceImageOperation(image)
-                async let ocrResult = self.extractTextOperation(image)
+                let preparedImage = await self.prepareUploadedImageOperation(image)
+                guard self.isCurrentOperation(operationID, for: target) else { return }
+
+                async let enhancedImage = self.enhanceImageOperation(preparedImage)
+                async let ocrResult = self.extractTextOperation(preparedImage)
                 let enhanced = await enhancedImage
                 let extractedText = await ocrResult
 
@@ -336,8 +345,11 @@ class CardImageState {
                 let image = try await CardFileImageImporter.image(fromFileAt: url)
                 guard let self, self.isCurrentOperation(operationID, for: target) else { return }
 
-                async let enhancedImage = self.enhanceImageOperation(image)
-                async let ocrResult = self.extractTextOperation(image)
+                let preparedImage = await self.prepareUploadedImageOperation(image)
+                guard self.isCurrentOperation(operationID, for: target) else { return }
+
+                async let enhancedImage = self.enhanceImageOperation(preparedImage)
+                async let ocrResult = self.extractTextOperation(preparedImage)
                 let enhanced = await enhancedImage
                 let extractedText = await ocrResult
 

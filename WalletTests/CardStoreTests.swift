@@ -183,6 +183,35 @@ final class CardStoreTests: XCTestCase {
         XCTAssertNil(state.importErrorMessage)
     }
 
+    func testFileImportCropsWhitespaceAroundImageContent() async throws {
+        let cardRect = CGRect(x: 160, y: 180, width: 680, height: 360)
+        let sourceImage = makeImageWithCardOnBackground(
+            width: 1000,
+            height: 700,
+            cardRect: cardRect
+        )
+        let data = try XCTUnwrap(sourceImage.pngData())
+        let fileURL = makeTemporaryFileURL(filenameExtension: "png")
+        try data.write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let state = CardImageState(
+            enhanceImageOperation: { image in image },
+            extractTextOperation: { _ in OCRExtractionResult(texts: []) }
+        )
+
+        state.loadAndEnhanceImage(fromFileAt: fileURL, for: .front, isEditMode: true)
+        try await waitForEnhancement(toFinishIn: state)
+
+        let importedImage = try XCTUnwrap(state.frontImage)
+        XCTAssertLessThan(importedImage.pixelSize.width, sourceImage.pixelSize.width * 0.9)
+        XCTAssertLessThan(importedImage.pixelSize.height, sourceImage.pixelSize.height * 0.75)
+        XCTAssertEqual(
+            importedImage.pixelSize.width / importedImage.pixelSize.height,
+            cardRect.width / cardRect.height,
+            accuracy: 0.3
+        )
+    }
+
     func testFileImageImporterRendersPDFPage() throws {
         let data = makePDFData(width: 612, height: 792)
 
@@ -193,6 +222,30 @@ final class CardStoreTests: XCTestCase {
         XCTAssertLessThanOrEqual(
             max(importedImage.pixelSize.width, importedImage.pixelSize.height),
             CardImageProcessor.maxStorageDimension
+        )
+    }
+
+    func testPDFFileImportCropsWhitespaceAroundCardContent() async throws {
+        let cardRect = CGRect(x: 56, y: 210, width: 500, height: 315)
+        let data = makePDFDataWithCard(width: 612, height: 792, cardRect: cardRect)
+        let fileURL = makeTemporaryFileURL(filenameExtension: "pdf")
+        try data.write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let state = CardImageState(
+            enhanceImageOperation: { image in image },
+            extractTextOperation: { _ in OCRExtractionResult(texts: []) }
+        )
+
+        state.loadAndEnhanceImage(fromFileAt: fileURL, for: .front, isEditMode: true)
+        try await waitForEnhancement(toFinishIn: state)
+
+        let importedImage = try XCTUnwrap(state.frontImage)
+        XCTAssertLessThan(importedImage.pixelSize.width, CardImageProcessor.maxStorageDimension * 0.9)
+        XCTAssertLessThan(importedImage.pixelSize.height, CardImageProcessor.maxStorageDimension * 0.7)
+        XCTAssertEqual(
+            importedImage.pixelSize.width / importedImage.pixelSize.height,
+            cardRect.width / cardRect.height,
+            accuracy: 0.3
         )
     }
 
@@ -1419,6 +1472,28 @@ final class CardStoreTests: XCTestCase {
         }
     }
 
+    private func makeImageWithCardOnBackground(
+        width: CGFloat,
+        height: CGFloat,
+        cardRect: CGRect,
+        cardColor: UIColor = .systemBlue,
+        backgroundColor: UIColor = .white
+    ) -> UIImage {
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1.0
+        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+
+        return UIGraphicsImageRenderer(size: bounds.size, format: format).image { context in
+            backgroundColor.setFill()
+            context.fill(bounds)
+            cardColor.setFill()
+            context.fill(cardRect)
+            UIColor.black.setStroke()
+            context.cgContext.setLineWidth(2)
+            context.cgContext.stroke(cardRect)
+        }
+    }
+
     private func makePDFData(width: CGFloat, height: CGFloat) -> Data {
         let bounds = CGRect(x: 0, y: 0, width: width, height: height)
         return UIGraphicsPDFRenderer(bounds: bounds).pdfData { context in
@@ -1428,6 +1503,20 @@ final class CardStoreTests: XCTestCase {
             UIColor.black.setStroke()
             let insetBounds = bounds.insetBy(dx: 36, dy: 36)
             context.cgContext.stroke(insetBounds)
+        }
+    }
+
+    private func makePDFDataWithCard(width: CGFloat, height: CGFloat, cardRect: CGRect) -> Data {
+        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        return UIGraphicsPDFRenderer(bounds: bounds).pdfData { context in
+            context.beginPage()
+            UIColor.white.setFill()
+            context.fill(bounds)
+            UIColor.systemBlue.setFill()
+            context.fill(cardRect)
+            UIColor.black.setStroke()
+            context.cgContext.setLineWidth(2)
+            context.cgContext.stroke(cardRect)
         }
     }
 }
