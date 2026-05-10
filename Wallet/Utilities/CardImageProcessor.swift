@@ -24,6 +24,8 @@ final class CardImageProcessor: @unchecked Sendable {
         static let maximumAspectRatio: CGFloat = 3.2
         static let tightFramePerspectiveAreaRatio: CGFloat = 0.45
         static let tightFrameAspectTolerance: CGFloat = 0.18
+        static let tightFrameTrimAspectTolerance: CGFloat = 0.06
+        static let tightFrameInnerContentDimensionRatio: CGFloat = 0.5
         static let insetRectangleEdgeTolerance: CGFloat = 0.08
     }
 
@@ -79,6 +81,21 @@ final class CardImageProcessor: @unchecked Sendable {
         guard let originalCGImage = image.cgImage,
               let analysisBuffer = PixelBuffer(image: analysisImage),
               let analysisCropRect = uniformBackgroundCropRect(in: analysisBuffer) else {
+            return image
+        }
+
+        let normalizedCropRect = CGRect(
+            x: analysisCropRect.minX / CGFloat(analysisBuffer.width),
+            y: analysisCropRect.minY / CGFloat(analysisBuffer.height),
+            width: analysisCropRect.width / CGFloat(analysisBuffer.width),
+            height: analysisCropRect.height / CGFloat(analysisBuffer.height)
+        )
+        if isCardLikeFrame(image, tolerance: BackgroundTrim.tightFrameTrimAspectTolerance),
+           !isCardLikeRectangle(normalizedCropRect, in: image),
+           (isInsetRectangle(normalizedCropRect)
+                && min(normalizedCropRect.width, normalizedCropRect.height) < BackgroundTrim.tightFrameInnerContentDimensionRatio
+            || normalizedCropRect.width > 1 - BackgroundTrim.insetRectangleEdgeTolerance
+            || normalizedCropRect.height > 1 - BackgroundTrim.insetRectangleEdgeTolerance) {
             return image
         }
 
@@ -375,29 +392,36 @@ final class CardImageProcessor: @unchecked Sendable {
         let box = observation.boundingBox
         let areaRatio = box.width * box.height
 
-        if isCardLikeFrame(image), isInsetRectangle(box), !isCardLikeRectangle(box) {
+        if isCardLikeFrame(image), isInsetRectangle(box) {
             return areaRatio >= BackgroundTrim.tightFramePerspectiveAreaRatio
         }
 
         return true
     }
 
-    private static func isCardLikeFrame(_ image: UIImage) -> Bool {
+    private static func isCardLikeFrame(
+        _ image: UIImage,
+        tolerance: CGFloat = BackgroundTrim.tightFrameAspectTolerance
+    ) -> Bool {
         let pixelSize = image.pixelSize
         guard pixelSize.width > 0, pixelSize.height > 0 else {
             return false
         }
 
         let aspectRatio = max(pixelSize.width / pixelSize.height, pixelSize.height / pixelSize.width)
-        return abs(aspectRatio - Constants.CardLayout.aspectRatio) <= BackgroundTrim.tightFrameAspectTolerance
+        return abs(aspectRatio - Constants.CardLayout.aspectRatio) <= tolerance
     }
 
-    private static func isCardLikeRectangle(_ box: CGRect) -> Bool {
-        guard box.width > 0, box.height > 0 else {
+    private static func isCardLikeRectangle(_ box: CGRect, in image: UIImage) -> Bool {
+        let pixelSize = image.pixelSize
+        let pixelWidth = box.width * pixelSize.width
+        let pixelHeight = box.height * pixelSize.height
+
+        guard pixelWidth > 0, pixelHeight > 0 else {
             return false
         }
 
-        let aspectRatio = max(box.width / box.height, box.height / box.width)
+        let aspectRatio = max(pixelWidth / pixelHeight, pixelHeight / pixelWidth)
         return abs(aspectRatio - Constants.CardLayout.aspectRatio) <= BackgroundTrim.tightFrameAspectTolerance
     }
 

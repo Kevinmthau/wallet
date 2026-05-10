@@ -231,6 +231,25 @@ final class CardStoreTests: XCTestCase {
         XCTAssertEqual(importedImage.pixelSize.height, sourceImage.pixelSize.height, accuracy: 1)
     }
 
+    func testFileImportDoesNotCropTightlyFramedCardToInnerSquareCode() async throws {
+        let sourceImage = makeTightlyFramedCardWithSquareCode(width: 1000, height: 630)
+        let data = try XCTUnwrap(sourceImage.pngData())
+        let fileURL = makeTemporaryFileURL(filenameExtension: "png")
+        try data.write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let state = CardImageState(
+            enhanceImageOperation: { image in image },
+            extractTextOperation: { _ in OCRExtractionResult(texts: []) }
+        )
+
+        state.loadAndEnhanceImage(fromFileAt: fileURL, for: .front, isEditMode: true)
+        try await waitForEnhancement(toFinishIn: state)
+
+        let importedImage = try XCTUnwrap(state.frontImage)
+        XCTAssertEqual(importedImage.pixelSize.width, sourceImage.pixelSize.width, accuracy: 1)
+        XCTAssertEqual(importedImage.pixelSize.height, sourceImage.pixelSize.height, accuracy: 1)
+    }
+
     func testFileImageImporterRendersPDFPage() throws {
         let data = makePDFData(width: 612, height: 792)
 
@@ -1542,6 +1561,45 @@ final class CardStoreTests: XCTestCase {
                 context.cgContext.move(to: CGPoint(x: x, y: barcodeRect.minY + 8))
                 context.cgContext.addLine(to: CGPoint(x: x, y: barcodeRect.maxY - 8))
                 context.cgContext.strokePath()
+            }
+        }
+    }
+
+    private func makeTightlyFramedCardWithSquareCode(width: CGFloat, height: CGFloat) -> UIImage {
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1.0
+        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        let codeSize = width * 0.25
+        let codeRect = CGRect(
+            x: (width - codeSize) / 2,
+            y: (height - codeSize) / 2,
+            width: codeSize,
+            height: codeSize
+        )
+
+        return UIGraphicsImageRenderer(size: bounds.size, format: format).image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(bounds)
+
+            UIColor.white.setFill()
+            context.fill(codeRect)
+
+            UIColor.black.setStroke()
+            context.cgContext.setLineWidth(2)
+            context.cgContext.stroke(codeRect)
+
+            let cellSize = codeRect.width / 7
+            for row in 0..<7 {
+                for column in 0..<7 where (row + column).isMultiple(of: 2) || row == 0 || column == 0 {
+                    let cellRect = CGRect(
+                        x: codeRect.minX + CGFloat(column) * cellSize,
+                        y: codeRect.minY + CGFloat(row) * cellSize,
+                        width: cellSize,
+                        height: cellSize
+                    ).insetBy(dx: 2, dy: 2)
+                    UIColor.black.setFill()
+                    context.fill(cellRect)
+                }
             }
         }
     }
