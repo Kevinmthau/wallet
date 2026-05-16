@@ -4,6 +4,7 @@ import SwiftUI
 struct WalletApp: App {
     private let persistenceController: PersistenceController
     @State private var cardStore: CardStore
+    @State private var syncMonitor: CloudKitSyncMonitor
     @State private var persistentStoreLoadState: PersistentStoreLoadState
 
     init() {
@@ -12,6 +13,10 @@ struct WalletApp: App {
 
         let context = persistenceController.container.viewContext
         _cardStore = State(initialValue: CardStore(context: context))
+        _syncMonitor = State(initialValue: CloudKitSyncMonitor(
+            container: persistenceController.container,
+            cloudKitEnabled: persistenceController.cloudKitEnabled
+        ))
         _persistentStoreLoadState = State(initialValue: persistenceController.loadState)
     }
 
@@ -20,6 +25,7 @@ struct WalletApp: App {
             WalletRootView(
                 persistenceController: persistenceController,
                 cardStore: cardStore,
+                syncMonitor: syncMonitor,
                 persistentStoreLoadState: persistentStoreLoadState
             )
         }
@@ -29,6 +35,7 @@ struct WalletApp: App {
 private struct WalletRootView: View {
     let persistenceController: PersistenceController
     let cardStore: CardStore
+    let syncMonitor: CloudKitSyncMonitor
     let persistentStoreLoadState: PersistentStoreLoadState
 
     var body: some View {
@@ -39,6 +46,7 @@ private struct WalletRootView: View {
                 CardListView()
                     .environment(\.managedObjectContext, persistenceController.container.viewContext)
                     .environment(cardStore)
+                    .environment(syncMonitor)
             }
         }
     }
