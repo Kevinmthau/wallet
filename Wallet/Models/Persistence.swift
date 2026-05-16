@@ -74,6 +74,9 @@ struct PersistenceController {
     let container: NSPersistentCloudKitContainer
     let loadState: PersistentStoreLoadState
 
+    /// Whether CloudKit mirroring is active for this store (false for tests / in-memory).
+    let cloudKitEnabled: Bool
+
     /// Publisher for remote CloudKit changes - subscribe to refresh UI when other devices sync
     let remoteChangePublisher = PassthroughSubject<Void, Never>()
 
@@ -87,6 +90,7 @@ struct PersistenceController {
         cloudKitEnabled: Bool? = nil
     ) {
         let cloudKitEnabled = cloudKitEnabled ?? (!inMemory && !Self.isRunningTests)
+        self.cloudKitEnabled = cloudKitEnabled
         let loadState = PersistentStoreLoadState()
         self.loadState = loadState
 

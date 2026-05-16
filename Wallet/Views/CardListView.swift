@@ -106,6 +106,7 @@ struct CardStackLayout {
 
 struct CardListView: View {
     @Environment(CardStore.self) private var cardStore
+    @Environment(CloudKitSyncMonitor.self) private var syncMonitor
 
     @FetchRequest private var cardPresenceProbe: FetchedResults<Card>
     @FetchRequest private var displayedCards: FetchedResults<Card>
@@ -253,6 +254,12 @@ struct CardListView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 12)
                     .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            if let syncWarning = SyncStatusBanner.warning(for: syncMonitor.status) {
+                SyncStatusBanner(message: syncWarning)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
             }
 
             // Cards immediately below
@@ -610,9 +617,47 @@ struct VisibleCardShape: Shape {
     }
 }
 
+private struct SyncStatusBanner: View {
+    let message: String
+
+    /// Returns user-facing text only for states worth interrupting the user over.
+    /// Healthy / in-progress sync shows nothing to avoid UI noise.
+    static func warning(for status: CloudKitSyncMonitor.Status) -> String? {
+        switch status {
+        case .failed(let message), .accountUnavailable(let message):
+            return message
+        case .unknown, .syncing, .upToDate:
+            return nil
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: "exclamationmark.icloud")
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(.systemBackground))
+                .shadow(color: .black.opacity(0.08), radius: 2, x: 0, y: 1)
+        )
+        .accessibilityElement(children: .combine)
+    }
+}
+
 #Preview {
     let preview = PersistenceController.preview
     CardListView()
         .environment(\.managedObjectContext, preview.container.viewContext)
         .environment(CardStore(context: preview.container.viewContext))
+        .environment(CloudKitSyncMonitor(
+            container: preview.container,
+            cloudKitEnabled: preview.cloudKitEnabled
+        ))
 }

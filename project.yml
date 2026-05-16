@@ -33,6 +33,7 @@ targets:
           - CloudKit
         com.apple.developer.icloud-container-identifiers:
           - iCloud.com.kevinthau.wallet
+        aps-environment: development
 
   WalletTests:
     type: bundle.unit-test
