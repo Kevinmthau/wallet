@@ -32,7 +32,7 @@ targets:
           CODE_SIGN_IDENTITY: Apple Development
         Release:
           CODE_SIGN_ENTITLEMENTS: Wallet/Wallet.entitlements
-          CODE_SIGN_IDENTITY: Apple Distribution
+          CODE_SIGN_IDENTITY: Apple Development
 
   WalletTests:
     type: bundle.unit-test
