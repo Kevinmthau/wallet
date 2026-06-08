@@ -256,7 +256,8 @@ struct CardListView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            if let syncWarning = SyncStatusBanner.warning(for: syncMonitor.status) {
+            if !cardPresenceProbe.isEmpty,
+               let syncWarning = SyncStatusBanner.warning(for: syncMonitor.status) {
                 SyncStatusBanner(message: syncWarning)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 12)
@@ -297,7 +298,12 @@ struct CardListView: View {
                 onDelete: deleteCardFromViewer
             )
         }
-        .onAppear(perform: refreshDisplayedCardsFetch)
+        .onAppear {
+            refreshDisplayedCardsFetch()
+            #if DEBUG
+            syncMonitor.logCurrentState()
+            #endif
+        }
         .onChange(of: filterRawValue) { _, _ in
             refreshDisplayedCardsFetch()
         }
@@ -340,15 +346,25 @@ struct CardListView: View {
     }
 
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label("No Cards", systemImage: "wallet.pass")
-        } description: {
-            Text("Add your membership cards, IDs, and more")
-        } actions: {
-            Button("Add Card") {
-                showingAddCard = true
+        VStack(spacing: 16) {
+            ContentUnavailableView {
+                Label("No Cards", systemImage: "wallet.pass")
+            } description: {
+                Text("Add your membership cards, IDs, and more")
+            } actions: {
+                Button("Add Card") {
+                    showingAddCard = true
+                }
+                .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
+
+            if let syncStatus = SyncStatusBanner.emptyWalletStatus(
+                for: syncMonitor.status,
+                lastEvent: syncMonitor.lastEvent
+            ) {
+                SyncStatusBanner(presentation: syncStatus)
+                    .padding(.horizontal, 16)
+            }
         }
     }
 
@@ -617,8 +633,33 @@ struct VisibleCardShape: Shape {
     }
 }
 
-private struct SyncStatusBanner: View {
-    let message: String
+struct SyncStatusBanner: View {
+    enum Style: Equatable {
+        case warning
+        case information
+        case progress
+        case success
+    }
+
+    struct Presentation: Equatable {
+        let message: String
+        let systemImage: String
+        let style: Style
+    }
+
+    let presentation: Presentation
+
+    init(message: String) {
+        presentation = Presentation(
+            message: message,
+            systemImage: "exclamationmark.icloud",
+            style: .warning
+        )
+    }
+
+    init(presentation: Presentation) {
+        self.presentation = presentation
+    }
 
     /// Returns user-facing text only for states worth interrupting the user over.
     /// Healthy / in-progress sync shows nothing to avoid UI noise.
@@ -626,16 +667,61 @@ private struct SyncStatusBanner: View {
         switch status {
         case .failed(let message), .accountUnavailable(let message):
             return message
-        case .unknown, .syncing, .upToDate:
+        case .unknown, .signedIn, .syncing, .upToDate:
             return nil
+        }
+    }
+
+    static func emptyWalletStatus(
+        for status: CloudKitSyncMonitor.Status,
+        lastEvent: CloudKitSyncMonitor.LastEvent?
+    ) -> Presentation? {
+        switch status {
+        case .unknown:
+            return Presentation(
+                message: "Checking iCloud sync status.",
+                systemImage: "icloud",
+                style: .information
+            )
+        case .signedIn:
+            return Presentation(
+                message: "Signed in to iCloud. Waiting for cards to sync.",
+                systemImage: "checkmark.icloud",
+                style: .information
+            )
+        case .syncing:
+            return Presentation(
+                message: lastEvent?.message ?? "Syncing cards with iCloud.",
+                systemImage: "arrow.triangle.2.circlepath.icloud",
+                style: .progress
+            )
+        case .upToDate:
+            if let lastEvent {
+                return Presentation(
+                    message: lastEvent.message,
+                    systemImage: lastEvent.outcome == .failed ? "exclamationmark.icloud" : "checkmark.icloud",
+                    style: lastEvent.outcome == .failed ? .warning : .success
+                )
+            }
+            return Presentation(
+                message: "iCloud sync is up to date.",
+                systemImage: "checkmark.icloud",
+                style: .success
+            )
+        case .accountUnavailable(let message), .failed(let message):
+            return Presentation(
+                message: message,
+                systemImage: "exclamationmark.icloud",
+                style: .warning
+            )
         }
     }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: "exclamationmark.icloud")
-                .foregroundStyle(.orange)
-            Text(message)
+            icon
+                .foregroundStyle(iconColor)
+            Text(presentation.message)
                 .font(.footnote)
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -648,6 +734,29 @@ private struct SyncStatusBanner: View {
                 .shadow(color: .black.opacity(0.08), radius: 2, x: 0, y: 1)
         )
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var icon: some View {
+        if presentation.style == .progress {
+            ProgressView()
+                .controlSize(.small)
+        } else {
+            Image(systemName: presentation.systemImage)
+        }
+    }
+
+    private var iconColor: Color {
+        switch presentation.style {
+        case .warning:
+            return .orange
+        case .information:
+            return .blue
+        case .progress:
+            return .secondary
+        case .success:
+            return .green
+        }
     }
 }
 

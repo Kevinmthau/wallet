@@ -883,6 +883,63 @@ final class CardStoreTests: XCTestCase {
         XCTAssertNotNil(failure.recoverySuggestion)
     }
 
+    func testSyncStatusBannerWarningOnlyShowsFailures() {
+        XCTAssertNil(SyncStatusBanner.warning(for: .unknown))
+        XCTAssertNil(SyncStatusBanner.warning(for: .signedIn))
+        XCTAssertNil(SyncStatusBanner.warning(for: .syncing))
+        XCTAssertNil(SyncStatusBanner.warning(for: .upToDate))
+        XCTAssertEqual(
+            SyncStatusBanner.warning(for: .accountUnavailable("Sign in to iCloud.")),
+            "Sign in to iCloud."
+        )
+        XCTAssertEqual(
+            SyncStatusBanner.warning(for: .failed("iCloud sync failed.")),
+            "iCloud sync failed."
+        )
+    }
+
+    func testEmptyWalletSyncStatusShowsSignedInProgressFailuresAndLastEvent() throws {
+        let signedIn = try XCTUnwrap(SyncStatusBanner.emptyWalletStatus(
+            for: .signedIn,
+            lastEvent: nil
+        ))
+        XCTAssertEqual(signedIn.message, "Signed in to iCloud. Waiting for cards to sync.")
+        XCTAssertEqual(signedIn.style, .information)
+
+        let startedImport = CloudKitSyncMonitor.LastEvent(
+            direction: .importChanges,
+            outcome: .started,
+            date: Date(timeIntervalSinceReferenceDate: 0),
+            message: "Importing cards from iCloud."
+        )
+        let syncing = try XCTUnwrap(SyncStatusBanner.emptyWalletStatus(
+            for: .syncing,
+            lastEvent: startedImport
+        ))
+        XCTAssertEqual(syncing.message, "Importing cards from iCloud.")
+        XCTAssertEqual(syncing.style, .progress)
+
+        let failed = try XCTUnwrap(SyncStatusBanner.emptyWalletStatus(
+            for: .failed("iCloud sync failed."),
+            lastEvent: nil
+        ))
+        XCTAssertEqual(failed.message, "iCloud sync failed.")
+        XCTAssertEqual(failed.style, .warning)
+
+        let completedImport = CloudKitSyncMonitor.LastEvent(
+            direction: .importChanges,
+            outcome: .succeeded,
+            date: Date(timeIntervalSinceReferenceDate: 1),
+            message: "Imported latest changes from iCloud."
+        )
+        let upToDate = try XCTUnwrap(SyncStatusBanner.emptyWalletStatus(
+            for: .upToDate,
+            lastEvent: completedImport
+        ))
+        XCTAssertEqual(upToDate.message, "Imported latest changes from iCloud.")
+        XCTAssertEqual(upToDate.style, .success)
+    }
+
     func testTimestampMergePolicyPrefersNewerStoreVersion() throws {
         let storeURL = makeTemporaryStoreURL()
         do {

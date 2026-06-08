@@ -20,20 +20,18 @@ targets:
     settings:
       base:
         INFOPLIST_FILE: Wallet/Info.plist
-        CODE_SIGN_ENTITLEMENTS: Wallet/Wallet.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: com.kevinthau.wallet
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         DEVELOPMENT_TEAM: "3JXY2MS2Y3"
-    entitlements:
-      path: Wallet/Wallet.entitlements
-      properties:
-        com.apple.developer.icloud-services:
-          - CloudKit
-        com.apple.developer.icloud-container-identifiers:
-          - iCloud.com.kevinthau.wallet
-        aps-environment: development
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: Wallet/WalletDebug.entitlements
+          CODE_SIGN_IDENTITY: Apple Development
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Wallet/Wallet.entitlements
+          CODE_SIGN_IDENTITY: Apple Distribution
 
   WalletTests:
     type: bundle.unit-test

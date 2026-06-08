@@ -11,6 +11,6 @@
 		<string>iCloud.com.kevinthau.wallet</string>
 	</array>
 	<key>aps-environment</key>
-	<string>production</string>
+	<string>development</string>
 </dict>
 </plist>

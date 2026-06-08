@@ -54,6 +54,8 @@ if [[ ! -d "$PROJECT_PATH" ]]; then
   exit 1
 fi
 
+bash "$ROOT_DIR/scripts/verify_project_membership.sh"
+
 if [[ -z "$DESTINATION" ]]; then
   destination_discovery_log="$(mktemp "${TMPDIR:-/tmp}/wallet-destinations.log.XXXXXX")"
   xcodebuild -project "$PROJECT_PATH" -scheme "$SCHEME" -showdestinations >"$destination_discovery_log" 2>&1 || true

@@ -68,6 +68,8 @@ private final class RemoteChangeLogCoalescer {
 }
 
 struct PersistenceController {
+    static let cloudKitContainerIdentifier = "iCloud.com.kevinthau.wallet"
+
     static let shared = PersistenceController()
     private static let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
@@ -93,6 +95,9 @@ struct PersistenceController {
         self.cloudKitEnabled = cloudKitEnabled
         let loadState = PersistentStoreLoadState()
         self.loadState = loadState
+        AppLogger.data.info(
+            "PersistenceController: CloudKit mirroring enabled=\(cloudKitEnabled), container=\(Self.cloudKitContainerIdentifier)"
+        )
 
         // Create the managed object model programmatically
         let model = NSManagedObjectModel()
@@ -217,12 +222,16 @@ struct PersistenceController {
 
             if !cloudKitEnabled {
                 description.cloudKitContainerOptions = nil
+                AppLogger.data.info("PersistenceController: CloudKit mirroring disabled for this store")
             } else {
                 description.cloudKitContainerOptions = NSPersistentCloudKitContainerOptions(
-                    containerIdentifier: "iCloud.com.kevinthau.wallet"
+                    containerIdentifier: Self.cloudKitContainerIdentifier
                 )
                 description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
                 description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+                AppLogger.data.info(
+                    "PersistenceController: Configured CloudKit mirroring for \(Self.cloudKitContainerIdentifier)"
+                )
             }
             description.setOption(true as NSNumber, forKey: NSMigratePersistentStoresAutomaticallyOption)
             description.setOption(true as NSNumber, forKey: NSInferMappingModelAutomaticallyOption)
@@ -230,9 +239,14 @@ struct PersistenceController {
             AppLogger.data.error("PersistenceController: No persistent store description found - CloudKit sync may not work")
         }
 
-        container.loadPersistentStores { _, error in
+        container.loadPersistentStores { storeDescription, error in
             if let error = error as NSError? {
                 AppLogger.data.error("PersistenceController: Failed to load persistent store: \(error.localizedDescription), \(error.userInfo)")
+            } else {
+                let loadedContainerIdentifier = storeDescription.cloudKitContainerOptions?.containerIdentifier ?? "none"
+                AppLogger.data.info(
+                    "PersistenceController: Loaded persistent store, CloudKit mirroring enabled=\(cloudKitEnabled), container=\(loadedContainerIdentifier)"
+                )
             }
             DispatchQueue.main.async {
                 loadState.finishLoading(error: error)
