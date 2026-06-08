@@ -61,6 +61,11 @@ final class CloudKitSyncMonitor {
 
     private var eventObserver: NotificationObserver?
     private let containerIdentifier: String
+    private static let cloudKitDescriptionUserInfoKeys = [
+        "CKErrorServerDescription",
+        "CKErrorDescription",
+        "ServerErrorDescription"
+    ]
 
     init(
         container: NSPersistentCloudKitContainer,
@@ -130,7 +135,7 @@ final class CloudKitSyncMonitor {
             AppLogger.data.error(
                 "CloudKitSyncMonitor: \(direction.logName) failed: \(error.localizedDescription), \(errorPayload)"
             )
-            let message = "iCloud sync failed: \(error.localizedDescription)"
+            let message = Self.failureMessage(for: error)
             lastEvent = LastEvent(
                 direction: direction,
                 outcome: .failed,
@@ -218,6 +223,100 @@ final class CloudKitSyncMonitor {
         case .exportChanges:
             return "Uploaded latest changes to iCloud."
         }
+    }
+
+    static func failureMessage(for error: Error) -> String {
+        "iCloud sync failed: \(failureSummary(for: error))"
+    }
+
+    private static func failureSummary(for error: Error, depth: Int = 0) -> String {
+        let nsError = error as NSError
+        guard nsError.domain == CKErrorDomain else {
+            return error.localizedDescription
+        }
+
+        if let code = CKError.Code(rawValue: nsError.code),
+           code == .partialFailure,
+           let partialSummary = partialFailureSummary(from: nsError, depth: depth) {
+            return partialSummary
+        }
+
+        if let detailedDescription = detailedCloudKitDescription(for: nsError) {
+            return detailedDescription
+        }
+
+        switch CKError.Code(rawValue: nsError.code) {
+        case .notAuthenticated:
+            return "Sign in to iCloud in Settings to sync your cards across devices."
+        case .networkUnavailable, .networkFailure:
+            return "Wallet couldn't reach iCloud. Check your network connection and try again."
+        case .quotaExceeded:
+            return "iCloud storage is full. Free up iCloud storage, then try again."
+        case .serviceUnavailable:
+            return "iCloud is temporarily unavailable. Try again later."
+        case .requestRateLimited:
+            if let retryAfter = retryAfterDelay(from: nsError) {
+                return "iCloud asked Wallet to retry in \(Int(retryAfter.rounded())) seconds."
+            }
+            return "iCloud asked Wallet to slow down syncing. Try again later."
+        case .missingEntitlement, .badContainer:
+            return "Wallet isn't configured for the iCloud container \(PersistenceController.cloudKitContainerIdentifier)."
+        case .invalidArguments, .serverRejectedRequest, .constraintViolation:
+            return "iCloud rejected a card record. Check that the CloudKit production schema is deployed."
+        default:
+            return nsError.localizedDescription
+        }
+    }
+
+    private static func retryAfterDelay(from error: NSError) -> TimeInterval? {
+        let value = error.userInfo[CKErrorRetryAfterKey]
+        if let timeInterval = value as? TimeInterval {
+            return timeInterval
+        }
+        return (value as? NSNumber)?.doubleValue
+    }
+
+    private static func partialFailureSummary(from error: NSError, depth: Int) -> String? {
+        guard depth < 4,
+              let partialErrors = error.userInfo[CKPartialErrorsByItemIDKey] as? NSDictionary,
+              partialErrors.count > 0 else {
+            return nil
+        }
+
+        let summaries = partialErrors.allValues.compactMap { value -> String? in
+            if let nestedError = value as? NSError {
+                return failureSummary(for: nestedError, depth: depth + 1)
+            }
+            if let nestedError = value as? Error {
+                return failureSummary(for: nestedError, depth: depth + 1)
+            }
+            return nil
+        }
+
+        guard let firstSummary = summaries.first else {
+            return nil
+        }
+
+        let failedItemCount = partialErrors.count
+        let prefix = failedItemCount == 1
+            ? "1 CloudKit item failed"
+            : "\(failedItemCount) CloudKit items failed"
+        return "\(prefix): \(firstSummary)"
+    }
+
+    private static func detailedCloudKitDescription(for error: NSError) -> String? {
+        let cloudKitDescriptions = cloudKitDescriptionUserInfoKeys.map { error.userInfo[$0] }
+        let candidateDescriptions = cloudKitDescriptions + [
+            error.userInfo[NSLocalizedFailureReasonErrorKey],
+            error.userInfo[NSDebugDescriptionErrorKey],
+            error.userInfo[NSLocalizedDescriptionKey]
+        ]
+
+        return candidateDescriptions.compactMap { value -> String? in
+            guard let description = value as? String else { return nil }
+            let trimmed = description.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }.first
     }
 
     private static func accountStatusDescription(_ accountStatus: CKAccountStatus) -> String {

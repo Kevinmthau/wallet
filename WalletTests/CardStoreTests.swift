@@ -1,6 +1,7 @@
 import XCTest
 import UIKit
 import CoreData
+import CloudKit
 @testable import Wallet
 
 @MainActor
@@ -938,6 +939,45 @@ final class CardStoreTests: XCTestCase {
         ))
         XCTAssertEqual(upToDate.message, "Imported latest changes from iCloud.")
         XCTAssertEqual(upToDate.style, .success)
+    }
+
+    func testCloudKitPartialFailureMessageShowsNestedServerDescription() {
+        let nestedError = NSError(
+            domain: CKErrorDomain,
+            code: CKError.Code.serverRejectedRequest.rawValue,
+            userInfo: [
+                "CKErrorServerDescription": "Field 'CD_hasBackImage' is not defined in production schema."
+            ]
+        )
+        let partialError = NSError(
+            domain: CKErrorDomain,
+            code: CKError.Code.partialFailure.rawValue,
+            userInfo: [
+                CKPartialErrorsByItemIDKey: [
+                    "record-id": nestedError
+                ]
+            ]
+        )
+
+        XCTAssertEqual(
+            CloudKitSyncMonitor.failureMessage(for: partialError),
+            "iCloud sync failed: 1 CloudKit item failed: Field 'CD_hasBackImage' is not defined in production schema."
+        )
+    }
+
+    func testCloudKitRequestRateLimitedMessageShowsRetryDelay() {
+        let error = NSError(
+            domain: CKErrorDomain,
+            code: CKError.Code.requestRateLimited.rawValue,
+            userInfo: [
+                CKErrorRetryAfterKey: NSNumber(value: 12.4)
+            ]
+        )
+
+        XCTAssertEqual(
+            CloudKitSyncMonitor.failureMessage(for: error),
+            "iCloud sync failed: iCloud asked Wallet to retry in 12 seconds."
+        )
     }
 
     func testTimestampMergePolicyPrefersNewerStoreVersion() throws {
