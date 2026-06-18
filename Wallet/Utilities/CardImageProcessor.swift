@@ -31,6 +31,13 @@ final class CardImageProcessor: @unchecked Sendable {
         static let insetRectangleEdgeTolerance: CGFloat = 0.08
     }
 
+    private enum RectangleSelection {
+        static let minimumAreaRatio = Constants.Scanner.minimumCardAreaRatio
+        static let minimumAspectRatio: CGFloat = 1.2
+        static let maximumAspectRatio: CGFloat = 2.75
+        static let minimumCardAspectRelativeArea: CGFloat = 0.25
+    }
+
     // Use shared CIContext from ImageEnhancer (expensive to create, should be reused)
     private let context = ImageProcessingContext.shared
 
@@ -713,11 +720,10 @@ final class CardImageProcessor: @unchecked Sendable {
     ///
     /// Vision returns rectangles ordered by confidence, which tends to favor a
     /// bold inner panel or logo over the card's fainter outer edge — especially
-    /// when the card sits on a textured or similarly colored background. When any
-    /// card-aspect rectangle is present we prefer the largest one so uploads crop
-    /// to the full card instead of skipping the crop (or cropping to an inner
-    /// panel). With no card-shaped candidate we fall back to Vision's highest
-    /// confidence result, preserving the previous behavior.
+    /// when the card sits on a textured or similarly colored background. We score
+    /// sufficiently large candidates by area and aspect, while only letting exact
+    /// card-aspect matches win automatically when they are not tiny compared to
+    /// the largest plausible candidate.
     static func preferredCardRectangle(
         from rectangles: [VNRectangleObservation],
         imagePixelSize: CGSize
@@ -744,29 +750,107 @@ final class CardImageProcessor: @unchecked Sendable {
             return nil
         }
 
-        let cardAspectIndices = boundingBoxes.indices.filter { index in
-            isCardAspectRectangle(boundingBoxes[index], imagePixelSize: imagePixelSize)
+        let candidates = boundingBoxes.indices.compactMap { index in
+            wholeCardRectangleCandidate(
+                index: index,
+                box: boundingBoxes[index],
+                imagePixelSize: imagePixelSize
+            )
         }
 
-        if let largestCardAspect = cardAspectIndices.max(by: { lhs, rhs in
-            boundingBoxArea(boundingBoxes[lhs]) < boundingBoxArea(boundingBoxes[rhs])
+        guard !candidates.isEmpty else {
+            return 0
+        }
+
+        let largestCandidateArea = candidates
+            .map(\.area)
+            .max() ?? 0
+        let cardAspectCandidates = candidates.filter { candidate in
+            candidate.isCardAspect
+                && candidate.area >= largestCandidateArea * RectangleSelection.minimumCardAspectRelativeArea
+        }
+
+        if let largestCardAspect = cardAspectCandidates.max(by: { lhs, rhs in
+            lhs.area < rhs.area
         }) {
-            return largestCardAspect
+            return largestCardAspect.index
+        }
+
+        if let highestScoringCandidate = candidates.max(by: { lhs, rhs in
+            if lhs.score == rhs.score {
+                return lhs.area < rhs.area
+            }
+            return lhs.score < rhs.score
+        }) {
+            return highestScoringCandidate.index
         }
 
         return 0
     }
 
+    private static func wholeCardRectangleCandidate(
+        index: Int,
+        box: CGRect,
+        imagePixelSize: CGSize
+    ) -> RectangleCandidate? {
+        let area = boundingBoxArea(box)
+        guard area >= RectangleSelection.minimumAreaRatio,
+              let aspectRatio = boundingBoxAspectRatio(box, imagePixelSize: imagePixelSize),
+              aspectRatio >= RectangleSelection.minimumAspectRatio,
+              aspectRatio <= RectangleSelection.maximumAspectRatio else {
+            return nil
+        }
+
+        let maxAspectDelta = max(
+            Constants.CardLayout.aspectRatio - RectangleSelection.minimumAspectRatio,
+            RectangleSelection.maximumAspectRatio - Constants.CardLayout.aspectRatio
+        )
+        guard maxAspectDelta > 0 else {
+            return nil
+        }
+
+        let normalizedAspectDelta = abs(aspectRatio - Constants.CardLayout.aspectRatio) / maxAspectDelta
+        let aspectClosenessScore = max(0, 1 - normalizedAspectDelta * normalizedAspectDelta)
+        guard aspectClosenessScore > 0 else {
+            return nil
+        }
+
+        return RectangleCandidate(
+            index: index,
+            area: area,
+            aspectRatio: aspectRatio,
+            score: area * aspectClosenessScore
+        )
+    }
+
+    private struct RectangleCandidate {
+        let index: Int
+        let area: CGFloat
+        let aspectRatio: CGFloat
+        let score: CGFloat
+
+        var isCardAspect: Bool {
+            abs(aspectRatio - Constants.CardLayout.aspectRatio) <= BackgroundTrim.tightFrameAspectTolerance
+        }
+    }
+
     private static func isCardAspectRectangle(_ box: CGRect, imagePixelSize: CGSize) -> Bool {
+        guard let aspectRatio = boundingBoxAspectRatio(box, imagePixelSize: imagePixelSize) else {
+            return false
+        }
+
+        return abs(aspectRatio - Constants.CardLayout.aspectRatio) <= BackgroundTrim.tightFrameAspectTolerance
+    }
+
+    private static func boundingBoxAspectRatio(_ box: CGRect, imagePixelSize: CGSize) -> CGFloat? {
         let pixelWidth = box.width * imagePixelSize.width
         let pixelHeight = box.height * imagePixelSize.height
 
         guard pixelWidth > 0, pixelHeight > 0 else {
-            return false
+            return nil
         }
 
-        let aspectRatio = max(pixelWidth / pixelHeight, pixelHeight / pixelWidth)
-        return abs(aspectRatio - Constants.CardLayout.aspectRatio) <= BackgroundTrim.tightFrameAspectTolerance
+        return max(pixelWidth / pixelHeight, pixelHeight / pixelWidth)
     }
 
     private static func boundingBoxArea(_ box: CGRect) -> CGFloat {

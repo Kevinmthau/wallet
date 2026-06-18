@@ -1558,10 +1558,26 @@ final class CardStoreTests: XCTestCase {
         XCTAssertEqual(selectedIndex, 1)
     }
 
+    func testPreferredCardRectanglePicksLargeWideCardOverTinyCardAspectLogo() {
+        // Regression for uploaded screenshots where Vision finds the full card
+        // plus a tiny Rx/PPO-style mark whose aspect is closer to a standard card.
+        let imagePixelSize = CGSize(width: 1260, height: 2736)
+        let wideVisibleCard = CGRect(x: 0.0760, y: 0.3633, width: 0.7993, height: 0.1713)
+        let innerBluePanel = CGRect(x: 0.0907, y: 0.3936, width: 0.7704, height: 0.1354)
+        let tinyCardAspectLogo = CGRect(x: 0.3165, y: 0.4067, width: 0.1449, height: 0.0469)
+
+        let selectedIndex = CardImageProcessor.preferredCardRectangleIndex(
+            boundingBoxes: [wideVisibleCard, innerBluePanel, tinyCardAspectLogo],
+            imagePixelSize: imagePixelSize
+        )
+
+        XCTAssertEqual(selectedIndex, 0)
+    }
+
     func testPreferredCardRectangleFallsBackToHighestConfidenceWithoutCardAspectMatch() {
-        // Inner square/barcode codes are not card-shaped, so the highest
-        // confidence result (index 0) is preserved and the upload crop guards
-        // can continue to protect tightly framed cards.
+        // Inner square/barcode codes are not plausible whole-card candidates, so
+        // the highest confidence result (index 0) is preserved and the upload
+        // crop guards can continue to protect tightly framed cards.
         let imagePixelSize = CGSize(width: 1000, height: 665)
         let squareCode = CGRect(x: 0.40, y: 0.40, width: 0.20, height: 0.30)
         let wideStripe = CGRect(x: 0.10, y: 0.45, width: 0.80, height: 0.12)
