@@ -1574,6 +1574,22 @@ final class CardStoreTests: XCTestCase {
         XCTAssertEqual(selectedIndex, 0)
     }
 
+    func testPreferredCardRectanglePicksCardAspectRectangleInsidePage() {
+        // A rendered PDF/photo can produce a high-confidence page outline before
+        // the actual card. The smaller card should still win once it clears the
+        // absolute candidate-size threshold.
+        let imagePixelSize = CGSize(width: 850, height: 1100)
+        let pageOutline = CGRect(x: 0.02, y: 0.02, width: 0.96, height: 0.96)
+        let cardOnPage = CGRect(x: 0.25, y: 0.40, width: 0.50, height: 0.2436)
+
+        let selectedIndex = CardImageProcessor.preferredCardRectangleIndex(
+            boundingBoxes: [pageOutline, cardOnPage],
+            imagePixelSize: imagePixelSize
+        )
+
+        XCTAssertEqual(selectedIndex, 1)
+    }
+
     func testPreferredCardRectangleFallsBackToHighestConfidenceWithoutCardAspectMatch() {
         // Inner square/barcode codes are not plausible whole-card candidates, so
         // the highest confidence result (index 0) is preserved and the upload

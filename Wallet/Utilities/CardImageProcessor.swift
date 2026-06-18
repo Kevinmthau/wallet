@@ -35,7 +35,6 @@ final class CardImageProcessor: @unchecked Sendable {
         static let minimumAreaRatio = Constants.Scanner.minimumCardAreaRatio
         static let minimumAspectRatio: CGFloat = 1.2
         static let maximumAspectRatio: CGFloat = 2.75
-        static let minimumCardAspectRelativeArea: CGFloat = 0.25
     }
 
     // Use shared CIContext from ImageEnhancer (expensive to create, should be reused)
@@ -720,10 +719,9 @@ final class CardImageProcessor: @unchecked Sendable {
     ///
     /// Vision returns rectangles ordered by confidence, which tends to favor a
     /// bold inner panel or logo over the card's fainter outer edge — especially
-    /// when the card sits on a textured or similarly colored background. We score
-    /// sufficiently large candidates by area and aspect, while only letting exact
-    /// card-aspect matches win automatically when they are not tiny compared to
-    /// the largest plausible candidate.
+    /// when the card sits on a textured or similarly colored background. We still
+    /// prefer sufficiently large exact card-aspect matches, then score remaining
+    /// candidates by area and aspect for visible cards with non-standard crops.
     static func preferredCardRectangle(
         from rectangles: [VNRectangleObservation],
         imagePixelSize: CGSize
@@ -762,12 +760,8 @@ final class CardImageProcessor: @unchecked Sendable {
             return 0
         }
 
-        let largestCandidateArea = candidates
-            .map(\.area)
-            .max() ?? 0
         let cardAspectCandidates = candidates.filter { candidate in
             candidate.isCardAspect
-                && candidate.area >= largestCandidateArea * RectangleSelection.minimumCardAspectRelativeArea
         }
 
         if let largestCardAspect = cardAspectCandidates.max(by: { lhs, rhs in
