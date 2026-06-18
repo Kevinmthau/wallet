@@ -74,6 +74,12 @@ enum Constants {
         static let minimumConfidence: Float = 0.3
         static let quadratureTolerance: Float = 30
 
+        /// Number of rectangle candidates to evaluate when choosing the card
+        /// outline for still-image cropping. Vision orders results by confidence,
+        /// which biases toward bold inner panels; evaluating several candidates
+        /// lets us prefer the card's outer edge instead.
+        static let maximumRectangleObservations = 16
+
         /// Length of corner brackets in scanner overlay
         static let overlayCornerLength: CGFloat = 30
     }

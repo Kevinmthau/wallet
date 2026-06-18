@@ -1530,6 +1530,59 @@ final class CardStoreTests: XCTestCase {
         XCTAssertEqual(results.map(\.objectID), [favoriteCard.objectID])
     }
 
+    func testPreferredCardRectanglePicksCardOutlineOverHighContrastInnerPanel() {
+        // Mirrors a card photographed on a textured background: Vision ranks the
+        // bold inner panel first by confidence, but the card outline should win.
+        let imagePixelSize = CGSize(width: 1000, height: 665)
+        let innerPanel = CGRect(x: 0.15, y: 0.30, width: 0.70, height: 0.39)
+        let cardOutline = CGRect(x: 0.06, y: 0.08, width: 0.88, height: 0.835)
+
+        let selectedIndex = CardImageProcessor.preferredCardRectangleIndex(
+            boundingBoxes: [innerPanel, cardOutline],
+            imagePixelSize: imagePixelSize
+        )
+
+        XCTAssertEqual(selectedIndex, 1)
+    }
+
+    func testPreferredCardRectanglePrefersLargerCardOutlineAmongCandidates() {
+        let imagePixelSize = CGSize(width: 1000, height: 665)
+        let smallerCardAspect = CGRect(x: 0.25, y: 0.25, width: 0.45, height: 0.427)
+        let largerCardAspect = CGRect(x: 0.06, y: 0.08, width: 0.88, height: 0.835)
+
+        let selectedIndex = CardImageProcessor.preferredCardRectangleIndex(
+            boundingBoxes: [smallerCardAspect, largerCardAspect],
+            imagePixelSize: imagePixelSize
+        )
+
+        XCTAssertEqual(selectedIndex, 1)
+    }
+
+    func testPreferredCardRectangleFallsBackToHighestConfidenceWithoutCardAspectMatch() {
+        // Inner square/barcode codes are not card-shaped, so the highest
+        // confidence result (index 0) is preserved and the upload crop guards
+        // can continue to protect tightly framed cards.
+        let imagePixelSize = CGSize(width: 1000, height: 665)
+        let squareCode = CGRect(x: 0.40, y: 0.40, width: 0.20, height: 0.30)
+        let wideStripe = CGRect(x: 0.10, y: 0.45, width: 0.80, height: 0.12)
+
+        let selectedIndex = CardImageProcessor.preferredCardRectangleIndex(
+            boundingBoxes: [squareCode, wideStripe],
+            imagePixelSize: imagePixelSize
+        )
+
+        XCTAssertEqual(selectedIndex, 0)
+    }
+
+    func testPreferredCardRectangleReturnsNilWhenNoRectanglesDetected() {
+        let selectedIndex = CardImageProcessor.preferredCardRectangleIndex(
+            boundingBoxes: [],
+            imagePixelSize: CGSize(width: 1000, height: 665)
+        )
+
+        XCTAssertNil(selectedIndex)
+    }
+
     private func seedConflictTestCard(
         in context: NSManagedObjectContext,
         timestamp: Date = Date(),

@@ -437,16 +437,7 @@ final class CardImageProcessor: @unchecked Sendable {
     }
 
     private static func isCardLikeRectangle(_ box: CGRect, in image: UIImage) -> Bool {
-        let pixelSize = image.pixelSize
-        let pixelWidth = box.width * pixelSize.width
-        let pixelHeight = box.height * pixelSize.height
-
-        guard pixelWidth > 0, pixelHeight > 0 else {
-            return false
-        }
-
-        let aspectRatio = max(pixelWidth / pixelHeight, pixelHeight / pixelWidth)
-        return abs(aspectRatio - Constants.CardLayout.aspectRatio) <= BackgroundTrim.tightFrameAspectTolerance
+        isCardAspectRectangle(box, imagePixelSize: image.pixelSize)
     }
 
     private static func isInsetRectangle(_ box: CGRect) -> Bool {
@@ -681,7 +672,7 @@ final class CardImageProcessor: @unchecked Sendable {
                 throw CancellationError()
             }
 
-            var rectangle: VNRectangleObservation?
+            var rectangles: [VNRectangleObservation] = []
             var requestError: Error?
 
             let request = VNDetectRectanglesRequest { request, error in
@@ -689,14 +680,14 @@ final class CardImageProcessor: @unchecked Sendable {
                     requestError = error
                     return
                 }
-                rectangle = (request.results as? [VNRectangleObservation])?.first
+                rectangles = request.results as? [VNRectangleObservation] ?? []
             }
 
             request.minimumAspectRatio = Constants.Scanner.minimumAspectRatio
             request.maximumAspectRatio = Constants.Scanner.maximumAspectRatio
             request.minimumSize = Constants.Scanner.minimumSize
             request.minimumConfidence = Constants.Scanner.minimumConfidence
-            request.maximumObservations = 1
+            request.maximumObservations = Constants.Scanner.maximumRectangleObservations
             request.quadratureTolerance = Constants.Scanner.quadratureTolerance
 
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
@@ -711,8 +702,75 @@ final class CardImageProcessor: @unchecked Sendable {
                 throw requestError
             }
 
-            return rectangle
+            return Self.preferredCardRectangle(
+                from: rectangles,
+                imagePixelSize: CGSize(width: cgImage.width, height: cgImage.height)
+            )
         }
+    }
+
+    /// Chooses the rectangle most likely to be the whole card.
+    ///
+    /// Vision returns rectangles ordered by confidence, which tends to favor a
+    /// bold inner panel or logo over the card's fainter outer edge — especially
+    /// when the card sits on a textured or similarly colored background. When any
+    /// card-aspect rectangle is present we prefer the largest one so uploads crop
+    /// to the full card instead of skipping the crop (or cropping to an inner
+    /// panel). With no card-shaped candidate we fall back to Vision's highest
+    /// confidence result, preserving the previous behavior.
+    static func preferredCardRectangle(
+        from rectangles: [VNRectangleObservation],
+        imagePixelSize: CGSize
+    ) -> VNRectangleObservation? {
+        guard let index = preferredCardRectangleIndex(
+            boundingBoxes: rectangles.map(\.boundingBox),
+            imagePixelSize: imagePixelSize
+        ) else {
+            return nil
+        }
+
+        return rectangles[index]
+    }
+
+    /// Pure selection logic shared with `preferredCardRectangle`, expressed over
+    /// bounding boxes so it can be exercised without constructing Vision
+    /// observations. `boundingBoxes` are assumed ordered by descending
+    /// confidence (as Vision returns them); index `0` is the fallback.
+    static func preferredCardRectangleIndex(
+        boundingBoxes: [CGRect],
+        imagePixelSize: CGSize
+    ) -> Int? {
+        guard !boundingBoxes.isEmpty else {
+            return nil
+        }
+
+        let cardAspectIndices = boundingBoxes.indices.filter { index in
+            isCardAspectRectangle(boundingBoxes[index], imagePixelSize: imagePixelSize)
+        }
+
+        if let largestCardAspect = cardAspectIndices.max(by: { lhs, rhs in
+            boundingBoxArea(boundingBoxes[lhs]) < boundingBoxArea(boundingBoxes[rhs])
+        }) {
+            return largestCardAspect
+        }
+
+        return 0
+    }
+
+    private static func isCardAspectRectangle(_ box: CGRect, imagePixelSize: CGSize) -> Bool {
+        let pixelWidth = box.width * imagePixelSize.width
+        let pixelHeight = box.height * imagePixelSize.height
+
+        guard pixelWidth > 0, pixelHeight > 0 else {
+            return false
+        }
+
+        let aspectRatio = max(pixelWidth / pixelHeight, pixelHeight / pixelWidth)
+        return abs(aspectRatio - Constants.CardLayout.aspectRatio) <= BackgroundTrim.tightFrameAspectTolerance
+    }
+
+    private static func boundingBoxArea(_ box: CGRect) -> CGFloat {
+        box.width * box.height
     }
 
     /// Analyzes text observations to determine if image needs rotation for proper reading orientation
