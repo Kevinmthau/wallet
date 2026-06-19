@@ -61,6 +61,9 @@ enum Constants {
         /// Timeout for text orientation detection (seconds)
         static let textDetectionTimeout: TimeInterval = 0.5
 
+        /// Timeout for still-image rectangle detection (seconds)
+        static let rectangleDetectionTimeout: TimeInterval = 1.5
+
         /// Timeout for OCR text extraction (seconds) - longer for .accurate level
         static let ocrTimeout: TimeInterval = 2.0
 

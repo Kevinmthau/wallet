@@ -237,6 +237,30 @@ final class CardStoreTests: XCTestCase {
         XCTAssertLessThan(importedImage.pixelSize.height, sourceImage.pixelSize.height * 0.85)
     }
 
+    func testFileImportCropsLowContrastCardOnTexturedBackground() async throws {
+        let sourceImage = makeLowContrastCardOnTexturedBackground(width: 1000, height: 700)
+        let data = try XCTUnwrap(sourceImage.pngData())
+        let fileURL = makeTemporaryFileURL(filenameExtension: "png")
+        try data.write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let state = CardImageState(
+            enhanceImageOperation: { image in image },
+            extractTextOperation: { _ in OCRExtractionResult(texts: []) }
+        )
+
+        state.loadAndEnhanceImage(fromFileAt: fileURL, for: .front, isEditMode: true)
+        try await waitForEnhancement(toFinishIn: state)
+
+        let importedImage = try XCTUnwrap(state.frontImage)
+        XCTAssertLessThan(importedImage.pixelSize.width, sourceImage.pixelSize.width * 0.98)
+        XCTAssertLessThan(importedImage.pixelSize.height, sourceImage.pixelSize.height * 0.96)
+        XCTAssertEqual(
+            importedImage.pixelSize.width / importedImage.pixelSize.height,
+            Constants.CardLayout.aspectRatio,
+            accuracy: 0.25
+        )
+    }
+
     func testFileImportDoesNotCropTightlyFramedCardToDenseFullWidthPanel() async throws {
         let panelRect = CGRect(x: 0, y: 40, width: 1000, height: 340)
         let sourceImage = makeImageWithCardOnBackground(
@@ -1761,6 +1785,52 @@ final class CardStoreTests: XCTestCase {
             UIColor.black.setStroke()
             context.cgContext.setLineWidth(2)
             context.cgContext.stroke(cardRect)
+        }
+    }
+
+    private func makeLowContrastCardOnTexturedBackground(width: CGFloat, height: CGFloat) -> UIImage {
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1.0
+        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        let cardRect = CGRect(x: 70, y: 110, width: 860, height: 520)
+        let panelRect = CGRect(
+            x: cardRect.minX + 24,
+            y: cardRect.minY + cardRect.height * 0.25,
+            width: cardRect.width - 48,
+            height: cardRect.height * 0.48
+        )
+
+        return UIGraphicsImageRenderer(size: bounds.size, format: format).image { context in
+            UIColor(red: 0.69, green: 0.62, blue: 0.50, alpha: 1).setFill()
+            context.fill(bounds)
+
+            for y in stride(from: 0, to: Int(height), by: 4) {
+                for x in stride(from: 0, to: Int(width), by: 4) {
+                    let variation = CGFloat((x * 31 + y * 17 + (x / 7) * 13 + (y / 11) * 29) % 64) / 255 - 0.125
+                    UIColor(
+                        red: 0.69 + variation,
+                        green: 0.62 + variation,
+                        blue: 0.50 + variation,
+                        alpha: 1
+                    ).setFill()
+                    context.fill(CGRect(x: CGFloat(x), y: CGFloat(y), width: 4, height: 4))
+                }
+            }
+
+            UIColor(red: 0.83, green: 0.80, blue: 0.69, alpha: 1).setFill()
+            context.fill(cardRect)
+
+            UIColor(red: 0.03, green: 0.32, blue: 0.44, alpha: 1).setFill()
+            context.fill(panelRect)
+
+            UIColor.white.withAlphaComponent(0.75).setStroke()
+            context.cgContext.setLineWidth(3)
+            for index in 0..<4 {
+                let y = panelRect.minY + 26 + CGFloat(index) * 45
+                context.cgContext.move(to: CGPoint(x: panelRect.minX + 20, y: y))
+                context.cgContext.addLine(to: CGPoint(x: panelRect.maxX - 20, y: y))
+                context.cgContext.strokePath()
+            }
         }
     }
 
