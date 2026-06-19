@@ -1612,6 +1612,33 @@ final class CardStoreTests: XCTestCase {
         XCTAssertFalse(shouldCorrect)
     }
 
+    func testRejectedInsetContentPanelRecoversCardCropInsideFabricFrame() throws {
+        let imagePixelSize = CGSize(width: 1280, height: 819)
+        let innerBluePanel = CGRect(x: 0.0666, y: 0.1339, width: 0.8399, height: 0.5268)
+
+        let recoveredCrop = try XCTUnwrap(CardImageProcessor.recoveredCardCropRectForRejectedInsetContent(
+            boundingBox: innerBluePanel,
+            imagePixelSize: imagePixelSize
+        ))
+        let contentRect = CGRect(
+            x: innerBluePanel.minX,
+            y: 1 - innerBluePanel.maxY,
+            width: innerBluePanel.width,
+            height: innerBluePanel.height
+        )
+        let recoveredAspectRatio = recoveredCrop.width * imagePixelSize.width
+            / (recoveredCrop.height * imagePixelSize.height)
+
+        XCTAssertTrue(recoveredCrop.contains(contentRect))
+        XCTAssertLessThan(recoveredCrop.width, 0.94)
+        XCTAssertLessThan(recoveredCrop.height, 0.94)
+        XCTAssertEqual(
+            recoveredAspectRatio,
+            Constants.CardLayout.aspectRatio,
+            accuracy: 0.18
+        )
+    }
+
     func testUploadPerspectiveCorrectionAllowsInsetCardAspectRectangleOnPage() {
         let imagePixelSize = CGSize(width: 850, height: 1100)
         let cardOnPage = CGRect(x: 0.25, y: 0.40, width: 0.50, height: 0.2436)
