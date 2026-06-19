@@ -37,6 +37,22 @@ final class CardImageProcessor: @unchecked Sendable {
         static let maximumAspectRatio: CGFloat = 2.75
     }
 
+    private enum StillImageRectangleDetection {
+        static let maxDimension: CGFloat = 1600
+    }
+
+    private enum RejectedInsetContentCrop {
+        static let minimumWidthRatio: CGFloat = 0.45
+        static let minimumHeightRatio: CGFloat = 0.20
+        static let minimumAreaRatio: CGFloat = 0.10
+        static let maximumAreaRatio: CGFloat = 0.55
+        static let minimumAspectRatio: CGFloat = 1.45
+        static let maximumAspectRatio: CGFloat = 3.4
+        static let assumedHorizontalCoverageRatio: CGFloat = 0.94
+        static let maximumContentHeightCoverageRatio: CGFloat = 0.60
+        static let cropExpansionRatio: CGFloat = 1.08
+    }
+
     // Use shared CIContext from ImageEnhancer (expensive to create, should be reused)
     private let context = ImageProcessingContext.shared
 
@@ -72,13 +88,20 @@ final class CardImageProcessor: @unchecked Sendable {
         let storageSizedImage = Self.resizeIfNeeded(orientedImage, maxDimension: Self.maxStorageDimension)
         let blankTrimmedImage = Self.trimUniformBackground(from: storageSizedImage)
 
-        guard let observation = await detectRectangle(in: blankTrimmedImage),
-              Self.shouldApplyUploadPerspectiveCorrection(observation, in: blankTrimmedImage),
+        guard let observation = await detectRectangle(in: blankTrimmedImage) else {
+            return await ensureProperOrientationAsync(blankTrimmedImage)
+        }
+
+        guard Self.shouldApplyUploadPerspectiveCorrection(observation, in: blankTrimmedImage),
               let correctedImage = await correctPerspectiveAsync(
                 image: blankTrimmedImage,
                 observation: observation
               ) else {
-            return await ensureProperOrientationAsync(blankTrimmedImage)
+            let fallbackImage = Self.cropAroundLikelyInsetCardContent(
+                observation,
+                in: blankTrimmedImage
+            ) ?? blankTrimmedImage
+            return await ensureProperOrientationAsync(fallbackImage)
         }
 
         return Self.trimUniformBackground(from: correctedImage)
@@ -213,13 +236,18 @@ final class CardImageProcessor: @unchecked Sendable {
 
     /// Detects a rectangle in a still image for accurate perspective correction
     func detectRectangle(in image: UIImage) async -> VNRectangleObservation? {
-        guard let cgImage = image.cgImage else {
+        let detectionImage = Self.resizeIfNeeded(
+            image,
+            maxDimension: StillImageRectangleDetection.maxDimension
+        )
+
+        guard let cgImage = detectionImage.cgImage else {
             AppLogger.scanner.warning("CardImageProcessor: Failed to get CGImage for rectangle detection")
             return nil
         }
 
         do {
-            return try await withImageProcessingTimeout(seconds: Constants.Scanner.textDetectionTimeout) { startTimeout in
+            return try await withImageProcessingTimeout(seconds: Constants.Scanner.rectangleDetectionTimeout) { startTimeout in
                 try await ImageProcessingWorkQueue.shared.run(onStart: startTimeout) { isCancelled in
                     guard !isCancelled() else {
                         throw CancellationError()
@@ -427,6 +455,109 @@ final class CardImageProcessor: @unchecked Sendable {
         }
 
         return true
+    }
+
+    private static func cropAroundLikelyInsetCardContent(
+        _ observation: VNRectangleObservation,
+        in image: UIImage
+    ) -> UIImage? {
+        let box = observation.boundingBox.standardized
+        let areaRatio = boundingBoxArea(box)
+        guard isInsetRectangle(box),
+              box.width >= RejectedInsetContentCrop.minimumWidthRatio,
+              box.height >= RejectedInsetContentCrop.minimumHeightRatio,
+              areaRatio >= RejectedInsetContentCrop.minimumAreaRatio,
+              areaRatio <= RejectedInsetContentCrop.maximumAreaRatio,
+              let contentAspectRatio = boundingBoxAspectRatio(box, imagePixelSize: image.pixelSize),
+              contentAspectRatio >= RejectedInsetContentCrop.minimumAspectRatio,
+              contentAspectRatio <= RejectedInsetContentCrop.maximumAspectRatio else {
+            return nil
+        }
+
+        let pixelSize = image.pixelSize
+        guard pixelSize.width > 0, pixelSize.height > 0 else {
+            return nil
+        }
+
+        let imageAspectRatio = pixelSize.width / pixelSize.height
+        let estimatedWidth = min(
+            1,
+            box.width
+                / RejectedInsetContentCrop.assumedHorizontalCoverageRatio
+                * RejectedInsetContentCrop.cropExpansionRatio
+        )
+        let aspectHeight = estimatedWidth * imageAspectRatio / Constants.CardLayout.aspectRatio
+        let contentHeight = box.height / RejectedInsetContentCrop.maximumContentHeightCoverageRatio
+        let estimatedHeight = min(
+            1,
+            max(aspectHeight, contentHeight) * RejectedInsetContentCrop.cropExpansionRatio
+        )
+
+        let contentRect = CGRect(
+            x: box.minX,
+            y: 1 - box.maxY,
+            width: box.width,
+            height: box.height
+        )
+        var cropX = contentRect.midX - estimatedWidth / 2
+        var cropY = contentRect.midY - estimatedHeight / 2
+        cropX = min(max(0, cropX), max(0, 1 - estimatedWidth))
+        cropY = min(max(0, cropY), max(0, 1 - estimatedHeight))
+
+        let cropRect = CGRect(
+            x: cropX,
+            y: cropY,
+            width: estimatedWidth,
+            height: estimatedHeight
+        )
+
+        guard cropRect.contains(contentRect),
+              isUsefulUploadCrop(cropRect),
+              isCardLikeRectangle(cropRect, in: image) else {
+            return nil
+        }
+
+        return crop(image, toNormalizedTopLeftRect: cropRect)
+    }
+
+    private static func isUsefulUploadCrop(_ normalizedCropRect: CGRect) -> Bool {
+        let horizontalTrimRatio = normalizedCropRect.minX + (1 - normalizedCropRect.maxX)
+        let verticalTrimRatio = normalizedCropRect.minY + (1 - normalizedCropRect.maxY)
+        let trimmedAreaRatio = 1 - normalizedCropRect.width * normalizedCropRect.height
+
+        return max(horizontalTrimRatio, verticalTrimRatio) >= BackgroundTrim.minimumTrimRatio
+            && trimmedAreaRatio >= BackgroundTrim.minimumTrimmedAreaRatio
+    }
+
+    private static func crop(
+        _ image: UIImage,
+        toNormalizedTopLeftRect normalizedCropRect: CGRect
+    ) -> UIImage? {
+        guard let originalCGImage = image.cgImage else {
+            return nil
+        }
+
+        let bounds = CGRect(
+            x: 0,
+            y: 0,
+            width: CGFloat(originalCGImage.width),
+            height: CGFloat(originalCGImage.height)
+        )
+        let cropRect = CGRect(
+            x: floor(normalizedCropRect.minX * bounds.width),
+            y: floor(normalizedCropRect.minY * bounds.height),
+            width: ceil(normalizedCropRect.width * bounds.width),
+            height: ceil(normalizedCropRect.height * bounds.height)
+        )
+        .intersection(bounds)
+
+        guard cropRect.width >= 1,
+              cropRect.height >= 1,
+              let croppedImage = originalCGImage.cropping(to: cropRect) else {
+            return nil
+        }
+
+        return UIImage(cgImage: croppedImage, scale: image.scale, orientation: image.imageOrientation)
     }
 
     private static func isCardLikeFrame(
