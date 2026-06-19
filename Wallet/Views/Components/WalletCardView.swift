@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct WalletCardView: View {
+    private static let metadataScrimHeight: CGFloat = 86
+
     @Environment(\.managedObjectContext) private var managedObjectContext
 
     let card: Card
@@ -29,7 +31,7 @@ struct WalletCardView: View {
         GeometryReader { geometry in
             ZStack {
                 // Card background
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: Constants.CardLayout.cornerRadius)
                     .fill(cardGradient)
 
                 // Card image if available
@@ -38,8 +40,16 @@ struct WalletCardView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: geometry.size.width, height: geometry.size.height)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .clipShape(RoundedRectangle(cornerRadius: Constants.CardLayout.cornerRadius))
                 }
+
+                VStack(spacing: 0) {
+                    metadataScrim
+                        .frame(height: min(geometry.size.height, Self.metadataScrimHeight))
+
+                    Spacer(minLength: 0)
+                }
+                .allowsHitTesting(false)
 
                 // Overlay with card info - Apple Wallet style (label at top-left)
                 VStack {
@@ -81,7 +91,7 @@ struct WalletCardView: View {
                     Spacer()
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: Constants.CardLayout.cornerRadius))
         }
         .task(id: imageLoadIdentifier) {
             guard shouldLoadThumbnail else {
@@ -106,5 +116,27 @@ struct WalletCardView: View {
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
+    }
+
+    private var metadataScrim: some View {
+        LinearGradient(
+            stops: [
+                Gradient.Stop(color: .black.opacity(0.68), location: 0),
+                Gradient.Stop(color: .black.opacity(0.42), location: 0.48),
+                Gradient.Stop(color: .clear, location: 1)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .overlay {
+            LinearGradient(
+                stops: [
+                    Gradient.Stop(color: .black.opacity(0.28), location: 0),
+                    Gradient.Stop(color: .clear, location: 0.82)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        }
     }
 }
