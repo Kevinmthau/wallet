@@ -53,9 +53,9 @@ final class CardImageProcessor: @unchecked Sendable {
         static let maximumAreaRatio: CGFloat = 0.55
         static let minimumAspectRatio: CGFloat = 1.45
         static let maximumAspectRatio: CGFloat = 3.4
-        static let assumedHorizontalCoverageRatio: CGFloat = 0.94
-        static let maximumContentHeightCoverageRatio: CGFloat = 0.60
-        static let cropExpansionRatio: CGFloat = 1.08
+        static let assumedHorizontalCoverageRatio: CGFloat = 0.96
+        static let maximumContentHeightCoverageRatio: CGFloat = 0.64
+        static let cropExpansionRatio: CGFloat = 1.04
     }
 
     // Use shared CIContext from ImageEnhancer (expensive to create, should be reused)
@@ -480,17 +480,28 @@ final class CardImageProcessor: @unchecked Sendable {
         _ observation: VNRectangleObservation,
         in image: UIImage
     ) -> UIImage? {
-        let box = observation.boundingBox.standardized
-        guard isRejectedInsetContentCropCandidate(box, imagePixelSize: image.pixelSize) else {
+        guard let cropRect = recoveredCardCropRectForRejectedInsetContent(
+            boundingBox: observation.boundingBox,
+            imagePixelSize: image.pixelSize
+        ) else {
             return nil
         }
 
-        let pixelSize = image.pixelSize
-        guard pixelSize.width > 0, pixelSize.height > 0 else {
+        return crop(image, toNormalizedTopLeftRect: cropRect)
+    }
+
+    static func recoveredCardCropRectForRejectedInsetContent(
+        boundingBox: CGRect,
+        imagePixelSize: CGSize
+    ) -> CGRect? {
+        let box = boundingBox.standardized
+        guard isRejectedInsetContentCropCandidate(box, imagePixelSize: imagePixelSize),
+              imagePixelSize.width > 0,
+              imagePixelSize.height > 0 else {
             return nil
         }
 
-        let imageAspectRatio = pixelSize.width / pixelSize.height
+        let imageAspectRatio = imagePixelSize.width / imagePixelSize.height
         let estimatedWidth = min(
             1,
             box.width
@@ -498,10 +509,12 @@ final class CardImageProcessor: @unchecked Sendable {
                 * RejectedInsetContentCrop.cropExpansionRatio
         )
         let aspectHeight = estimatedWidth * imageAspectRatio / Constants.CardLayout.aspectRatio
-        let contentHeight = box.height / RejectedInsetContentCrop.maximumContentHeightCoverageRatio
+        let contentHeight = box.height
+            / RejectedInsetContentCrop.maximumContentHeightCoverageRatio
+            * RejectedInsetContentCrop.cropExpansionRatio
         let estimatedHeight = min(
             1,
-            max(aspectHeight, contentHeight) * RejectedInsetContentCrop.cropExpansionRatio
+            max(aspectHeight, contentHeight)
         )
 
         let contentRect = CGRect(
@@ -524,11 +537,11 @@ final class CardImageProcessor: @unchecked Sendable {
 
         guard cropRect.contains(contentRect),
               isUsefulUploadCrop(cropRect),
-              isCardLikeRectangle(cropRect, in: image) else {
+              isCardAspectRectangle(cropRect, imagePixelSize: imagePixelSize) else {
             return nil
         }
 
-        return crop(image, toNormalizedTopLeftRect: cropRect)
+        return cropRect
     }
 
     private static func isUsefulUploadCrop(_ normalizedCropRect: CGRect) -> Bool {
