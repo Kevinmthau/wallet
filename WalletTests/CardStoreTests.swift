@@ -1598,6 +1598,32 @@ final class CardStoreTests: XCTestCase {
         XCTAssertEqual(selectedIndex, 0)
     }
 
+    func testUploadPerspectiveCorrectionRejectsLikelyInsetContentPanel() {
+        // Mirrors the BCBS photo failure: if Vision only finds the blue benefits
+        // panel, perspective-correcting it stores the panel instead of the card.
+        let imagePixelSize = CGSize(width: 1280, height: 819)
+        let innerBluePanel = CGRect(x: 0.0666, y: 0.1339, width: 0.8399, height: 0.5268)
+
+        let shouldCorrect = CardImageProcessor.shouldApplyUploadPerspectiveCorrection(
+            boundingBox: innerBluePanel,
+            imagePixelSize: imagePixelSize
+        )
+
+        XCTAssertFalse(shouldCorrect)
+    }
+
+    func testUploadPerspectiveCorrectionAllowsInsetCardAspectRectangleOnPage() {
+        let imagePixelSize = CGSize(width: 850, height: 1100)
+        let cardOnPage = CGRect(x: 0.25, y: 0.40, width: 0.50, height: 0.2436)
+
+        let shouldCorrect = CardImageProcessor.shouldApplyUploadPerspectiveCorrection(
+            boundingBox: cardOnPage,
+            imagePixelSize: imagePixelSize
+        )
+
+        XCTAssertTrue(shouldCorrect)
+    }
+
     func testPreferredCardRectanglePicksCardAspectRectangleInsidePage() {
         // A rendered PDF/photo can produce a high-confidence page outline before
         // the actual card. The smaller card should still win once it clears the

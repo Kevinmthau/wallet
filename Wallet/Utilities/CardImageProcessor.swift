@@ -42,6 +42,11 @@ final class CardImageProcessor: @unchecked Sendable {
     }
 
     private enum RejectedInsetContentCrop {
+        // The BCBS benefits panel sits close to the left card edge, so inset
+        // content recovery needs a looser edge threshold than the general guards.
+        static let edgeTolerance: CGFloat = 0.04
+        // Keep nonstandard whole-card rectangles eligible for perspective correction.
+        static let minimumPanelAspectRatio: CGFloat = 2.0
         static let minimumWidthRatio: CGFloat = 0.45
         static let minimumHeightRatio: CGFloat = 0.20
         static let minimumAreaRatio: CGFloat = 0.10
@@ -436,15 +441,29 @@ final class CardImageProcessor: @unchecked Sendable {
         _ observation: VNRectangleObservation,
         in image: UIImage
     ) -> Bool {
-        let box = observation.boundingBox
+        shouldApplyUploadPerspectiveCorrection(
+            boundingBox: observation.boundingBox,
+            imagePixelSize: image.pixelSize
+        )
+    }
+
+    static func shouldApplyUploadPerspectiveCorrection(
+        boundingBox: CGRect,
+        imagePixelSize: CGSize
+    ) -> Bool {
+        let box = boundingBox.standardized
         let areaRatio = box.width * box.height
 
-        if isCardLikeFrame(image) {
+        if isLikelyInsetContentPanel(box, imagePixelSize: imagePixelSize) {
+            return false
+        }
+
+        if isCardLikeFrame(pixelSize: imagePixelSize) {
             let isEdgeSpanningRectangle = !isInsetRectangle(box)
                 && (box.width > 1 - BackgroundTrim.insetRectangleEdgeTolerance
                     || box.height > 1 - BackgroundTrim.insetRectangleEdgeTolerance)
             if isEdgeSpanningRectangle,
-               !isCardLikeRectangle(box, in: image),
+               !isCardAspectRectangle(box, imagePixelSize: imagePixelSize),
                min(box.width, box.height) < BackgroundTrim.tightFrameEdgeContentDimensionRatio {
                 return false
             }
@@ -462,15 +481,7 @@ final class CardImageProcessor: @unchecked Sendable {
         in image: UIImage
     ) -> UIImage? {
         let box = observation.boundingBox.standardized
-        let areaRatio = boundingBoxArea(box)
-        guard isInsetRectangle(box),
-              box.width >= RejectedInsetContentCrop.minimumWidthRatio,
-              box.height >= RejectedInsetContentCrop.minimumHeightRatio,
-              areaRatio >= RejectedInsetContentCrop.minimumAreaRatio,
-              areaRatio <= RejectedInsetContentCrop.maximumAreaRatio,
-              let contentAspectRatio = boundingBoxAspectRatio(box, imagePixelSize: image.pixelSize),
-              contentAspectRatio >= RejectedInsetContentCrop.minimumAspectRatio,
-              contentAspectRatio <= RejectedInsetContentCrop.maximumAspectRatio else {
+        guard isRejectedInsetContentCropCandidate(box, imagePixelSize: image.pixelSize) else {
             return nil
         }
 
@@ -560,11 +571,49 @@ final class CardImageProcessor: @unchecked Sendable {
         return UIImage(cgImage: croppedImage, scale: image.scale, orientation: image.imageOrientation)
     }
 
+    private static func isRejectedInsetContentCropCandidate(
+        _ box: CGRect,
+        imagePixelSize: CGSize
+    ) -> Bool {
+        let areaRatio = boundingBoxArea(box)
+        guard isInsetRectangle(box, tolerance: RejectedInsetContentCrop.edgeTolerance),
+              box.width >= RejectedInsetContentCrop.minimumWidthRatio,
+              box.height >= RejectedInsetContentCrop.minimumHeightRatio,
+              areaRatio >= RejectedInsetContentCrop.minimumAreaRatio,
+              areaRatio <= RejectedInsetContentCrop.maximumAreaRatio,
+              let contentAspectRatio = boundingBoxAspectRatio(box, imagePixelSize: imagePixelSize),
+              contentAspectRatio >= RejectedInsetContentCrop.minimumAspectRatio,
+              contentAspectRatio <= RejectedInsetContentCrop.maximumAspectRatio else {
+            return false
+        }
+
+        return true
+    }
+
+    private static func isLikelyInsetContentPanel(
+        _ box: CGRect,
+        imagePixelSize: CGSize
+    ) -> Bool {
+        guard isRejectedInsetContentCropCandidate(box, imagePixelSize: imagePixelSize),
+              let aspectRatio = boundingBoxAspectRatio(box, imagePixelSize: imagePixelSize) else {
+            return false
+        }
+
+        return aspectRatio >= RejectedInsetContentCrop.minimumPanelAspectRatio
+            && !isCardAspectRectangle(box, imagePixelSize: imagePixelSize)
+    }
+
     private static func isCardLikeFrame(
         _ image: UIImage,
         tolerance: CGFloat = BackgroundTrim.tightFrameAspectTolerance
     ) -> Bool {
-        let pixelSize = image.pixelSize
+        isCardLikeFrame(pixelSize: image.pixelSize, tolerance: tolerance)
+    }
+
+    private static func isCardLikeFrame(
+        pixelSize: CGSize,
+        tolerance: CGFloat = BackgroundTrim.tightFrameAspectTolerance
+    ) -> Bool {
         guard pixelSize.width > 0, pixelSize.height > 0 else {
             return false
         }
@@ -577,8 +626,10 @@ final class CardImageProcessor: @unchecked Sendable {
         isCardAspectRectangle(box, imagePixelSize: image.pixelSize)
     }
 
-    private static func isInsetRectangle(_ box: CGRect) -> Bool {
-        let tolerance = BackgroundTrim.insetRectangleEdgeTolerance
+    private static func isInsetRectangle(
+        _ box: CGRect,
+        tolerance: CGFloat = BackgroundTrim.insetRectangleEdgeTolerance
+    ) -> Bool {
         return box.minX > tolerance
             && box.minY > tolerance
             && (1 - box.maxX) > tolerance
